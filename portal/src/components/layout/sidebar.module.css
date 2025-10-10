@@ -1,0 +1,195 @@
+:root {
+  --sidebar-width: 240px;
+  --sidebar-collapsed-width: 72px;
+  --transition-speed: 0.3s;
+}
+
+/* Completely revamped sidebar styling */
+.sidebarWrapper {
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 100vh;
+  z-index: 40;
+  width: var(--sidebar-width);
+  transition: width var(--transition-speed) ease-in-out, transform var(--transition-speed) ease-in-out;
+  background: var(--sidebar-background);
+  border-right: 1px solid hsl(var(--border));
+}
+
+.sidebarWrapperCollapsed {
+  width: var(--sidebar-collapsed-width);
+}
+
+/* Force main content to shift left when sidebar collapses */
+.mainContentWrapper {
+  margin-left: var(--sidebar-width);
+  transition: margin-left var(--transition-speed) ease-in-out, width var(--transition-speed) ease-in-out;
+  width: calc(100% - var(--sidebar-width));
+  min-height: 100vh;
+}
+
+.mainContentWrapperWithCollapsedSidebar {
+  margin-left: var(--sidebar-collapsed-width);
+  width: calc(100% - var(--sidebar-collapsed-width));
+}
+
+/* Keep icons centered when sidebar is collapsed */
+.iconWrapper {
+  display: flex;
+  align-items: center;
+  transition: all var(--transition-speed) ease-in-out;
+}
+
+/* Better tooltip styling with guaranteed visibility */
+.tooltipContainer {
+  position: relative;
+}
+
+.tooltip {
+  position: absolute;
+  left: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  border: 1px solid hsl(var(--border));
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 14px;
+  white-space: nowrap;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  z-index: 9999;
+  display: none;
+  pointer-events: none;
+}
+
+.tooltipContainer:hover .tooltip {
+  display: block;
+}
+
+/* Visibility control for text content */
+.sidebarTextContent {
+  transition: opacity var(--transition-speed) ease-in-out;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.sidebarWrapperCollapsed .sidebarTextContent {
+  width: 0;
+  opacity: 0;
+  visibility: hidden;
+  display: none;
+}
+
+/* Logo container */
+.logoContainer {
+  display: flex;
+  align-items: center;
+  height: 64px;
+  padding: 0 16px;
+  transition: all var(--transition-speed) ease-in-out;
+}
+
+.sidebarWrapperCollapsed .logoContainer {
+  justify-content: center;
+  min-width: 56px;
+}
+
+/* Center icons when sidebar is collapsed */
+.sidebarWrapperCollapsed .iconWrapper {
+  justify-content: center;
+}
+
+/* Hide footer content when collapsed */
+.footerContent {
+  transition: opacity var(--transition-speed) ease-in-out;
+}
+
+.sidebarWrapperCollapsed .footerContent {
+  display: none;
+}
+
+/* Mobile responsive styles */
+@media (max-width: 768px) {
+  .sidebarWrapper {
+    transform: translateX(0);
+    width: var(--sidebar-width);
+    background: var(--background);
+    box-shadow: 2px 0 8px rgba(0, 0, 0, 0.1);
+    z-index: 50;
+  }
+  
+  .sidebarHidden {
+    transform: translateX(-100%);
+  }
+  
+  .sidebarWrapperCollapsed {
+    transform: translateX(-100%);
+  }
+  
+  .mainContentWrapper {
+    margin-left: 0;
+    width: 100%;
+  }
+  
+  .mainContentWrapperWithCollapsedSidebar {
+    margin-left: 0;
+    width: 100%;
+  }
+  
+  .sidebarOverlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: rgba(0, 0, 0, 0.5);
+    z-index: 45;
+    display: none;
+    backdrop-filter: blur(2px);
+  }
+  
+  .sidebarOverlayVisible {
+    display: block;
+  }
+}
+
+/* RTL support: sidebar on the right */
+:dir(rtl) .sidebarWrapper {
+  left: auto;
+  right: 0;
+  border-right: none;
+  border-left: 1px solid hsl(var(--border));
+}
+
+:dir(rtl) .mainContentWrapper {
+  margin-left: 0;
+  margin-right: var(--sidebar-width);
+  width: calc(100% - var(--sidebar-width));
+}
+
+:dir(rtl) .mainContentWrapperWithCollapsedSidebar {
+  margin-left: 0;
+  margin-right: var(--sidebar-collapsed-width);
+  width: calc(100% - var(--sidebar-collapsed-width));
+}
+
+:dir(rtl) .sidebarWrapperCollapsed {
+  left: auto;
+  right: 0;
+}
+
+:dir(rtl) .logoContainer {
+  flex-direction: row-reverse;
+}
+
+:dir(rtl) .iconWrapper {
+  flex-direction: row-reverse;
+}
+
+:dir(rtl) .sidebarTextContent {
+  text-align: right;
+}

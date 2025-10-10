@@ -1,0 +1,227 @@
+@import url('https://fonts.googleapis.com/css2?family=League+Spartan:wght@100..900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Force League Spartan font with higher specificity */
+:root {
+  --font-family-base: 'League Spartan', system-ui, -apple-system, sans-serif;
+}
+
+/* Override all font families with !important */
+html, body, #root, * {
+  font-family: 'League Spartan', system-ui, -apple-system, sans-serif !important;
+}
+
+/* Specific element overrides */
+h1, h2, h3, h4, h5, h6, p, span, a, button, input, select, textarea {
+  font-family: 'League Spartan', system-ui, -apple-system, sans-serif !important;
+}
+
+/* Original League Spartan styles */
+.font-league-spartan {
+  font-family: 'League Spartan', system-ui, sans-serif !important;
+}
+
+/* Define font weights */
+.font-thin {
+  font-weight: 100;
+}
+.font-light {
+  font-weight: 300;
+}
+.font-normal {
+  font-weight: 400;
+}
+.font-medium {
+  font-weight: 500;
+}
+.font-semibold {
+  font-weight: 600;
+}
+.font-bold {
+  font-weight: 700;
+}
+.font-extrabold {
+  font-weight: 800;
+}
+.font-black {
+  font-weight: 900;
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+@layer base {
+  :root {
+    /* Light Mode - Modern UI Theme */
+    --background: 210 40% 98%;
+    --foreground: 222 47% 11%;
+    
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+    
+    --popover: 0 0% 100%;
+    --popover-foreground: 222 47% 11%;
+    
+    --primary: 221 83% 53%;
+    --primary-foreground: 210 40% 98%;
+    
+    --secondary: 210 40% 96%;
+    --secondary-foreground: 222 47% 11%;
+    
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+    
+    --accent: 220 90% 96%;
+    --accent-foreground: 221 83% 53%;
+    
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 210 40% 98%;
+    
+    --warning: 38 92% 50%;
+    --warning-foreground: 222 47% 11%;
+    
+    --border: 214 32% 91%;
+    --input: 214 32% 91%;
+    --ring: 221 83% 53%;
+    
+    /* Other existing variables */
+    --radius: 0.5rem;
+    --chart-1: 221 83% 53%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    
+    --sidebar-background: 210 40% 98%;
+    --sidebar-foreground: 222 47% 11%;
+    --sidebar-primary: 221 83% 53%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 220 90% 96%;
+    --sidebar-accent-foreground: 221 83% 53%;
+    --sidebar-border: 214 32% 91%;
+    --sidebar-ring: 221 83% 53%;
+  }
+
+  .dark {
+    /* Dark Mode - Modern UI Theme */
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    
+    --card: 222 47% 13%;
+    --card-foreground: 210 40% 98%;
+    
+    --popover: 222 47% 13%;
+    --popover-foreground: 210 40% 98%;
+    
+    --primary: 217 91% 60%;
+    --primary-foreground: 210 40% 98%;
+    
+    --secondary: 217 19% 27%;
+    --secondary-foreground: 210 40% 98%;
+    
+    --muted: 223 19% 20%;
+    --muted-foreground: 210 40% 80%;
+    
+    --accent: 217 19% 27%;
+    --accent-foreground: 210 40% 98%;
+    
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 210 40% 98%;
+
+    --success: 142 76% 36%;
+    --success-foreground: 210 40% 98%;
+    
+    --warning: 48 96% 53%;
+    --warning-foreground: 222 47% 11%;
+    
+    --border: 217 19% 27%;
+    --input: 217 19% 27%;
+    --ring: 224 76% 48%;
+    
+    /* Charts and other colors */
+    --chart-1: 217 91% 60%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 48 96% 53%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 336 80% 58%;
+    
+    --sidebar-background: 223 47% 8%;
+    --sidebar-foreground: 210 40% 98%;
+    --sidebar-primary: 224 76% 48%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 223 19% 16%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 223 19% 16%;
+    --sidebar-ring: 224 76% 48%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* Define custom classes for progress bar states */
+@layer utilities {
+  .bg-success {
+    @apply bg-green-500;
+  }
+  .bg-primary {
+    @apply bg-blue-500;
+  }
+  .bg-warning {
+    @apply bg-amber-500;
+  }
+  .bg-destructive {
+    @apply bg-red-500;
+  }
+}
+
+/* Progress bar custom styling */
+.progress[data-state="complete"] > div {
+  @apply bg-success;
+}
+
+.progress[data-state="in-progress"] > div {
+  @apply bg-primary;
+}
+
+.progress[data-state="warning"] > div {
+  @apply bg-warning;
+}
+
+.progress[data-state="returned"] > div {
+  @apply bg-destructive;
+}
+
+/* Card hover effects */
+.card-hover {
+  @apply transition-shadow duration-300;
+}
+
+.card-hover:hover {
+  @apply shadow-md;
+}
+
+/* Animations for theme switching */
+html.light, html.dark {
+  @apply transition-colors duration-300;
+}
+
+/* Additional modern UI styling... */
+.glass-effect {
+  @apply bg-background/80 backdrop-blur-md border border-border/50;
+}

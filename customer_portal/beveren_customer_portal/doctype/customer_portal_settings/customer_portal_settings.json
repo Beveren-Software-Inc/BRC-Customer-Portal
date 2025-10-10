@@ -1,0 +1,91 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "creation": "2025-04-08 11:53:25.337532",
+ "doctype": "DocType",
+ "engine": "InnoDB",
+ "field_order": [
+  "portal_branding_section",
+  "portal_logo",
+  "column_break_vdcm",
+  "portal_icon",
+  "section_break_hnzz",
+  "company_name",
+  "allow_download_files",
+  "column_break_yjvp",
+  "download_format"
+ ],
+ "fields": [
+  {
+   "fieldname": "portal_branding_section",
+   "fieldtype": "Section Break",
+   "label": "Portal Branding"
+  },
+  {
+   "fieldname": "portal_logo",
+   "fieldtype": "Attach Image",
+   "label": "Portal Logo"
+  },
+  {
+   "fieldname": "column_break_vdcm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "portal_icon",
+   "fieldtype": "Attach Image",
+   "label": "Portal Logo Icon"
+  },
+  {
+   "fieldname": "section_break_hnzz",
+   "fieldtype": "Section Break"
+  },
+  {
+   "fieldname": "company_name",
+   "fieldtype": "Link",
+   "label": "Company Name",
+   "options": "Company"
+  },
+  {
+   "default": "0",
+   "fieldname": "allow_download_files",
+   "fieldtype": "Check",
+   "label": "Allow Download Files"
+  },
+  {
+   "fieldname": "column_break_yjvp",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "PDF",
+   "fieldname": "download_format",
+   "fieldtype": "Select",
+   "label": "Download Format",
+   "options": "\nPDF\nExcel"
+  }
+ ],
+ "grid_page_length": 50,
+ "index_web_pages_for_search": 1,
+ "issingle": 1,
+ "links": [],
+ "modified": "2025-08-13 09:54:10.237517",
+ "modified_by": "Administrator",
+ "module": "Beveren Customer Portal",
+ "name": "Customer Portal Settings",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "create": 1,
+   "delete": 1,
+   "email": 1,
+   "print": 1,
+   "read": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "row_format": "Dynamic",
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
