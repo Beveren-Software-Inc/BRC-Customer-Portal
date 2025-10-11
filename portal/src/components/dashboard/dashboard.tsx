@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -170,29 +170,27 @@ export default function Dashboard() {
     retry: 2,
   });
 
-  // Extract SAP data from dashboard data
-  const salesOrders = sapDashboardData?.orders || [];
-  const invoices = sapDashboardData?.invoices || [];
-  const deliveryNotes = sapDashboardData?.delivery_notes || [];
-  const quotations = []; // SAP doesn't provide quotations in dashboard data
-  
-  // Set loading states based on SAP data loading
-  const ordersLoading = sapDataLoading;
-  const invoicesLoading = sapDataLoading;
-  const deliveriesLoading = sapDataLoading;
-  const quotationsLoading = false; // No quotations from SAP
-  
-  // Set error states based on SAP data errors
-  const ordersError = sapDataError;
-  const invoicesError = sapDataError;
-  const deliveriesError = sapDataError;
-  const quotationsError = false; // No quotations from SAP
-  
-  // Refetch functions
-  const refetchOrders = refetchSapData;
-  const refetchInvoices = refetchSapData;
-  const refetchDeliveries = refetchSapData;
-  const refetchQuotations = () => Promise.resolve(); // No quotations to refetch
+  // Extract SAP data from dashboard data using useMemo to prevent infinite loops
+  const { salesOrders, invoices, deliveryNotes, quotations, ordersLoading, invoicesLoading, deliveriesLoading, quotationsLoading, ordersError, invoicesError, deliveriesError, quotationsError, refetchOrders, refetchInvoices, refetchDeliveries, refetchQuotations } = useMemo(() => {
+    return {
+      salesOrders: sapDashboardData?.orders || [],
+      invoices: sapDashboardData?.invoices || [],
+      deliveryNotes: sapDashboardData?.delivery_notes || [],
+      quotations: [], // SAP doesn't provide quotations in dashboard data
+      ordersLoading: sapDataLoading,
+      invoicesLoading: sapDataLoading,
+      deliveriesLoading: sapDataLoading,
+      quotationsLoading: false, // No quotations from SAP
+      ordersError: sapDataError,
+      invoicesError: sapDataError,
+      deliveriesError: sapDataError,
+      quotationsError: false, // No quotations from SAP
+      refetchOrders: refetchSapData,
+      refetchInvoices: refetchSapData,
+      refetchDeliveries: refetchSapData,
+      refetchQuotations: () => Promise.resolve(), // No quotations to refetch
+    };
+  }, [sapDashboardData, sapDataLoading, sapDataError, refetchSapData]);
 
   // Determine overall loading state
   const loading =

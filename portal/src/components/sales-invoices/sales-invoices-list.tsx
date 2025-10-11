@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Eye, Download, Search, Receipt } from "lucide-react";
+import { Eye, Download, Search, Receipt, RefreshCw } from "lucide-react";
 import { formatDate, getStatusColor } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
 import { DataTablePagination } from "../ui/data-table-pagination";
@@ -73,6 +73,45 @@ export default function InvoicesList() {
 
     fetchInvoices();
   }, []);
+
+  const refetch = async () => {
+    try {
+      setIsLoading(true);
+      setIsError(false);
+      setError(null);
+      
+      // Clear cache first to ensure fresh SAP data
+      try {
+        await fetch('/api/method/customer_portal.api.customer_balance.clear_customer_cache');
+        console.log("Cache cleared successfully");
+      } catch (cacheError) {
+        console.warn("Failed to clear cache:", cacheError);
+        // Continue with refetch even if cache clear fails
+      }
+      
+      console.log("Refetching invoices from SAP...");
+      const data = await getSapInvoices();
+      console.log("Refetched invoices:", data);
+      console.log("Number of invoices:", data?.length || 0);
+      setInvoices(data || []);
+    } catch (err) {
+      console.error('Failed to refetch invoices:', err);
+      setIsError(true);
+      setError("Could not load invoices. Please try again later.");
+      setInvoices([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleRefresh = () => {
+    refetch();
+    toast({
+      title: t("Refreshing Invoices"),
+      description: "Fetching the latest invoices from SAP...",
+      duration: 2000,
+    });
+  };
 
   if (isError) {
     console.error("Failed to fetch invoices:", error);
@@ -172,7 +211,22 @@ export default function InvoicesList() {
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('Invoices')}</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t('Invoices')}</CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={handleRefresh}
+                disabled={isLoading}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+                />
+                <span className="sr-only">Refresh</span>
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-4">
