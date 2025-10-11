@@ -88,7 +88,7 @@ def get_customer_orders():
             }
         
         # Fetch orders from SAP
-        orders = sap_api_utils.get_customer_orders_from_sap(customer_code, limit=100)
+        orders = sap_api_utils.get_customer_orders_from_sap(customer_code, limit=500)
         
         return {
             "success": True,
@@ -114,7 +114,7 @@ def get_customer_delivery_notes():
             }
         
         # Fetch delivery notes from SAP
-        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=100)
+        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=500)
         
         return {
             "success": True,
@@ -141,9 +141,9 @@ def get_customer_dashboard_data():
         
         # Fetch all data from SAP
         balance_data = sap_api_utils.get_customer_balance_from_sap(customer_code)
-        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=200)
-        orders = sap_api_utils.get_customer_orders_from_sap(customer_code, limit=200)
-        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=200)
+        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=500)
+        orders = sap_api_utils.get_customer_orders_from_sap(customer_code, limit=500)
+        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=500)
         
         frappe.logger().info(f"[Dashboard] Fetched {len(delivery_notes)} delivery notes for customer {customer_code}")
         
@@ -233,7 +233,7 @@ def get_customer_delivery_notes():
             }
         
         # Fetch delivery notes from SAP
-        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=100)
+        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=500)
         
         return {
             "success": True,
@@ -265,6 +265,32 @@ def get_customer_delivery_note_detail(doc_num: str = None):
     except Exception as e:
         frappe.log_error(f"Error fetching delivery note detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching delivery note detail: {str(e)}"}
+
+@frappe.whitelist()
+def get_customer_payments():
+    """Get customer payments directly from SAP B1"""
+    try:
+        customer_code = sap_api_utils.get_customer_code_from_user()
+        if not customer_code:
+            return {
+                "error": True,
+                "message": "No customer code found for current user"
+            }
+        
+        # Fetch payments from SAP
+        payments = sap_api_utils.get_customer_payments_from_sap(customer_code, limit=500)
+        
+        return {
+            "success": True,
+            "data": payments
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error fetching customer payments: {str(e)}", "Customer Portal")
+        return {
+            "error": True,
+            "message": f"Error fetching customer payments: {str(e)}"
+        }
 
 @frappe.whitelist()
 def get_customer_statement_from_sap(from_date=None, to_date=None):
@@ -316,7 +342,7 @@ def get_customer_invoices():
             }
         
         # Fetch invoices from SAP
-        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=100)
+        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=500)
         
         return {
             "success": True,

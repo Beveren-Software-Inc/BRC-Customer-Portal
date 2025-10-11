@@ -81,8 +81,8 @@ export default function MainLayout({ children }: MainLayoutProps) {
     { name: t("Delivery Notes"), icon: Package, path: "/delivery-notes" },
     // { name: t("Quotations"), icon: FileText, path: "/quotations" },
     { name: t("Invoices"), icon: BarChart3, path: "/sales-invoices" },
+    { name: t("Payments"), icon: CreditCard, path: "/payments" },
     { name: t("Customer Statement"), icon: FileText, path: "/customer-statement" },
-    // { name: t("Payments"), icon: CreditCard, path: "/payments" },
     // { name: t("Support Tickets"), icon: TicketCheck, path: "/support-tickets" },
     // { name: t("Documents"), icon: FolderOpen, path: "/documents" },
   ];

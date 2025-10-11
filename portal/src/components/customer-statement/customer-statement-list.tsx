@@ -366,7 +366,12 @@ export default function CustomerStatementList() {
                       {formatCurrency(transaction.balance, transaction.currency)}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={transaction.status === 'Paid' ? 'default' : 'secondary'}>
+                      <Badge variant={
+                        transaction.status === 'Completed' ? 'default' : 
+                        transaction.status === 'Cancelled' ? 'destructive' : 
+                        transaction.status === 'Balance' ? 'outline' : 
+                        'secondary'
+                      }>
                         {transaction.status}
                       </Badge>
                     </TableCell>
@@ -375,11 +380,48 @@ export default function CustomerStatementList() {
               </TableBody>
             </Table>
           </div>
-          {transactions.length > 100 && (
+          {transactions.length > 500 && (
             <div className="p-3 bg-muted text-sm text-muted-foreground text-center">
-              {t('Showing first 100 rows of {count} total rows. Download for complete data.', { count: transactions.length })}
+              {t('Showing first 500 rows of {count} total rows. Download for complete data.', { count: transactions.length })}
             </div>
           )}
+        </div>
+
+        {/* Statement Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
+          <div className="bg-blue-50 p-4 rounded-lg">
+            <p className="text-sm text-blue-600">{t('Total Invoices')}</p>
+            <p className="text-2xl font-bold text-blue-900">
+              {summary?.total_invoices || 0}
+            </p>
+            <p className="text-xs text-blue-500">
+              {formatCurrency(summary?.total_invoice_amount || 0, transactions[0]?.currency || 'SAR')}
+            </p>
+          </div>
+          <div className="bg-green-50 p-4 rounded-lg">
+            <p className="text-sm text-green-600">{t('Total Payments')}</p>
+            <p className="text-2xl font-bold text-green-900">
+              {summary?.total_payments || 0}
+            </p>
+            <p className="text-xs text-green-500">
+              {formatCurrency(summary?.total_payment_amount || 0, transactions[0]?.currency || 'SAR')}
+            </p>
+          </div>
+          <div className="bg-amber-50 p-4 rounded-lg">
+            <p className="text-sm text-amber-600">{t('Opening Balance')}</p>
+            <p className="text-2xl font-bold text-amber-900">
+              {formatCurrency(opening_balance, transactions[0]?.currency || 'SAR')}
+            </p>
+          </div>
+          <div className="bg-purple-50 p-4 rounded-lg">
+            <p className="text-sm text-purple-600">{t('Closing Balance')}</p>
+            <p className="text-2xl font-bold text-purple-900">
+              {formatCurrency(closing_balance, transactions[0]?.currency || 'SAR')}
+            </p>
+            <p className={`text-xs ${closing_balance >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {closing_balance >= 0 ? t('Amount Due') : t('Credit Balance')}
+            </p>
+          </div>
         </div>
       </div>
     );
