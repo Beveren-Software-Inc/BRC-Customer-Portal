@@ -31,6 +31,7 @@ import { toast } from "@/components/ui/use-toast";
 import InvoicePrintPreviewDialog from "@/components/print/invoice-print-preview-dialog";
 import { useTranslation } from "react-i18next";
 import { MultiSelectDropdown } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
 import CustomerAging from "@/components/sales-invoices/customer_ageing";
 
 export default function InvoicesList() {
@@ -45,84 +46,54 @@ export default function InvoicesList() {
   >(null);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
 
-  const [invoices, setInvoices] = useState<SalesInvoice[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    async function fetchInvoices() {
-      try {
-        setIsLoading(true);
-        setIsError(false);
-        setError(null);
-        console.log("Fetching invoices from SAP...");
-        const data = await getSapInvoices();
-        console.log("Fetched invoices:", data);
-        console.log("Number of invoices:", data?.length || 0);
-        setInvoices(data || []);
-      } catch (err) {
-        console.error('Failed to fetch invoices:', err);
-        setIsError(true);
-        setError("Could not load invoices. Please try again later.");
-        setInvoices([]);
-      } finally {
-        setIsLoading(false);
-      }
-    }
-
-    fetchInvoices();
-  }, []);
-
-  const refetch = async () => {
-    try {
-      setIsLoading(true);
-      setIsError(false);
-      setError(null);
-      
-      // Clear cache first to ensure fresh SAP data
-      try {
-        await fetch('/api/method/customer_portal.api.customer_balance.clear_customer_cache');
-        console.log("Cache cleared successfully");
-      } catch (cacheError) {
-        console.warn("Failed to clear cache:", cacheError);
-        // Continue with refetch even if cache clear fails
-      }
-      
-      console.log("Refetching invoices from SAP...");
-      const data = await getSapInvoices();
-      console.log("Refetched invoices:", data);
-      console.log("Number of invoices:", data?.length || 0);
-      setInvoices(data || []);
-    } catch (err) {
-      console.error('Failed to refetch invoices:', err);
-      setIsError(true);
-      setError("Could not load invoices. Please try again later.");
-      setInvoices([]);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleRefresh = () => {
-    refetch();
-    toast({
-      title: t("Refreshing Invoices"),
-      description: "Fetching the latest invoices from SAP...",
-      duration: 2000,
-    });
-  };
-
+  // Fetch Invoices from SAP using React Query for proper caching
+  const {
+    data: invoices = [],
+    isLoading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<SalesInvoice[], Error>({
+    queryKey: ["sap-invoices"],
+    queryFn: getSapInvoices,
+    staleTime: 300000, // 5 minutes
+    refetchOnMount: true,
+    retry: 2,
+  });
+  
   if (isError) {
     console.error("Failed to fetch invoices:", error);
     toast({
       variant: "destructive",
       title: "Error Loading Invoices",
       description:
-        error?.message ||
-        "Could not load invoice data. Please try again later.",
+        error?.message || "Could not load invoice data. Please try again later.",
     });
   }
+
+  const handleRefresh = async () => {
+    try {
+      // Clear cache first to ensure fresh SAP data
+      await fetch('/api/method/customer_portal.api.customer_balance.clear_customer_cache');
+      console.log("Cache cleared successfully");
+      
+      // Refetch data
+      await refetch();
+      
+      toast({
+        title: t("Refreshing Invoices"),
+        description: "Fetching the latest invoices from SAP...",
+        duration: 2000,
+      });
+    } catch (error) {
+      console.error("Failed to refresh invoices:", error);
+      toast({
+        variant: "destructive",
+        title: "Refresh Failed",
+        description: "Failed to refresh invoices. Please try again.",
+      });
+    }
+  };
 
   // Parse status from query string on mount
   useEffect(() => {

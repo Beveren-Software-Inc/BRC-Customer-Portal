@@ -27,6 +27,7 @@ import {
   FileText,
   ClipboardList,
   CalendarIcon,
+  RefreshCw,
 } from "lucide-react";
 import { formatDate, getStatusColor } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
@@ -185,19 +186,25 @@ const paginatedData = sortedData.slice(
 
       <Card>
         <CardHeader>
-          <CardTitle>{t('Sales Orders')}</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>{t('Sales Orders')}</CardTitle>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="icon"
+                onClick={() => refetch()}
+                disabled={isLoading}
+              >
+                <RefreshCw
+                  className={`h-4 w-4 ${isLoading ? "animate-spin" : ""}`}
+                />
+                <span className="sr-only">Refresh</span>
+              </Button>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex flex-col gap-4">
-            {/* Quick status and reload */}
-            <div className="flex items-center justify-between text-xs text-muted-foreground">
-              <div>
-                {!isLoading && <span>Loaded {Array.isArray(orders) ? orders.length : 0} orders</span>}
-              </div>
-              <div>
-                <Button variant="outline" size="sm" onClick={() => refetch()}>{t('Reload')}</Button>
-              </div>
-            </div>
             <div className="flex flex-col sm:flex-row gap-4 justify-between">
               <div className="relative w-full sm:w-64">
                 <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />

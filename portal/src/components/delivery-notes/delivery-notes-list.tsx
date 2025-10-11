@@ -31,6 +31,7 @@ import { toast } from "@/components/ui/use-toast";
 import DeliveryNotePrintPreviewDialog from "@/components/print/delivery-note-print-preview-dialog";
 import { useTranslation } from "react-i18next";
 import { MultiSelectDropdown } from "@/components/ui/select";
+import { useQuery } from "@tanstack/react-query";
 
 export default function DeliveryNotesList() {
   const { t } = useTranslation();
@@ -43,63 +44,54 @@ export default function DeliveryNotesList() {
     useState<string | null>(null);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
 
-  const [deliveries, setDeliveries] = useState<DeliveryNote[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [isError, setIsError] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Fetch Delivery Notes from SAP using React Query for proper caching
+  const {
+    data: deliveries = [],
+    isLoading: loading,
+    isError,
+    error,
+    refetch,
+  } = useQuery<DeliveryNote[], Error>({
+    queryKey: ["sap-delivery-notes"],
+    queryFn: getSapDeliveryNotes,
+    staleTime: 300000, // 5 minutes
+    refetchOnMount: true,
+    retry: 2,
+  });
+  
+  if (isError) {
+    console.error("Failed to fetch delivery notes:", error);
+    toast({
+      variant: "destructive",
+      title: "Error Loading Deliveries",
+      description:
+        error?.message || "Could not load delivery data. Please try again later.",
+    });
+  }
 
-  useEffect(() => {
-    async function fetchDeliveryNotes() {
-      try {
-        setLoading(true);
-        setIsError(false);
-        setError(null);
-        console.log("Fetching delivery notes from SAP...");
-        const data = await getSapDeliveryNotes();
-        console.log("Fetched delivery notes:", data);
-        console.log("Number of delivery notes:", data?.length || 0);
-        setDeliveries(data || []);
-      } catch (err) {
-        console.error('Failed to fetch delivery notes:', err);
-        setIsError(true);
-        setError("Could not load delivery notes. Please try again later.");
-        setDeliveries([]);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchDeliveryNotes();
-  }, []);
-
-  const refetch = async () => {
+  const handleRefresh = async () => {
     try {
-      setLoading(true);
-      setIsError(false);
-      setError(null);
-      const data = await getSapDeliveryNotes();
-      setDeliveries(data);
-    } catch (err) {
-      console.error('Failed to refetch delivery notes:', err);
-      setIsError(true);
-      setError("Could not load delivery notes. Please try again later.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    if (isError && error) {
+      // Clear cache first to ensure fresh SAP data
+      await fetch('/api/method/customer_portal.api.customer_balance.clear_customer_cache');
+      console.log("Cache cleared successfully");
+      
+      // Refetch data
+      await refetch();
+      
+      toast({
+        title: t("Refreshing Deliveries"),
+        description: "Fetching the latest delivery notes from SAP...",
+        duration: 2000,
+      });
+    } catch (error) {
+      console.error("Failed to refresh delivery notes:", error);
       toast({
         variant: "destructive",
-        title: "Error Loading Deliveries",
-        description:
-          error.message ||
-          "Could not load delivery data. Please try again later.",
-        duration: 5000,
+        title: "Refresh Failed",
+        description: "Failed to refresh delivery notes. Please try again.",
       });
     }
-  }, [isError, error]);
+  };
 
   // Parse status from query string on mount
   useEffect(() => {
@@ -162,15 +154,6 @@ export default function DeliveryNotesList() {
         duration: 5000,
       });
     }
-  };
-
-  const handleRefresh = () => {
-    refetch();
-    toast({
-      title: "Refreshing Data",
-      description: "Fetching the latest delivery notes...",
-      duration: 2000,
-    });
   };
 
   // Status options for delivery notes (matching SAP B1 statuses)

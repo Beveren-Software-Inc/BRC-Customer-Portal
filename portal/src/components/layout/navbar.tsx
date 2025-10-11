@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ChevronDown, Settings, PanelLeft, LogOut, LayoutGrid, Menu, Globe } from "lucide-react";
+import { ChevronDown, Settings, PanelLeft, LogOut, LayoutGrid, Menu, Globe, RefreshCw } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -18,6 +18,8 @@ import { useAuth } from "@/context/auth-context";
 import { useApi } from "@/hooks/useApi";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
+import { toast } from "@/components/ui/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 interface NavbarProps {
   isMobile?: boolean;
@@ -29,6 +31,7 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
   const { user, logout } = useAuth();
   const [customerName, setCustomerName] = useState("");
   const { t, i18n } = useTranslation();
+  const queryClient = useQueryClient();
   
   // Define fields to fetch for orders and invoices (including customer_name)
   const salesOrderFields = ["name", "customer", "customer_name"];
@@ -118,6 +121,37 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
     window.location.href = "/apps";
   };
 
+  const handleClearCache = async () => {
+    try {
+      // Clear server-side cache
+      await fetch('/api/method/customer_portal.api.customer_balance.clear_customer_cache');
+      
+      // Clear React Query cache
+      queryClient.clear();
+      
+      // Show success message
+      toast({
+        title: t("Cache Cleared"),
+        description: "All cached data has been cleared. Data will be refreshed on next page load.",
+        duration: 3000,
+      });
+      
+      // Optionally refresh the page to show fresh data
+      setTimeout(() => {
+        window.location.reload();
+      }, 1000);
+      
+    } catch (error) {
+      console.error("Failed to clear cache:", error);
+      toast({
+        variant: "destructive",
+        title: t("Cache Clear Failed"),
+        description: "Failed to clear cache. Please try again.",
+        duration: 3000,
+      });
+    }
+  };
+
   // Use defensive programming to handle potential missing user info
   const userInitials = user?.initials || "U";
   const userFullName = user?.fullName || "User";
@@ -187,6 +221,10 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
                     <Settings className="mr-2 h-4 w-4" />
                     <span>{t("Settings")}</span>
                   </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={handleClearCache}>
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  <span>{t("Clear Cache")}</span>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem onClick={handleLogout}>
