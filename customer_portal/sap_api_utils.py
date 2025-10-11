@@ -308,7 +308,7 @@ def get_customer_balance_from_sap(customer_code):
         return None
 
 
-def get_customer_orders_from_sap(customer_code, limit=100):
+def get_customer_orders_from_sap(customer_code, limit=500):
     """Fetch customer sales orders from SAP B1 with pagination support"""
     try:
         cache_key = f"orders_{customer_code}_{limit}"
@@ -448,7 +448,7 @@ def get_customer_order_detail_from_sap(customer_code, doc_num):
         frappe.logger().error(f"Error fetching SAP order detail: {str(e)}")
         return None
 
-def get_customer_delivery_notes_from_sap(customer_code, limit=100):
+def get_customer_delivery_notes_from_sap(customer_code, limit=500):
     """Fetch customer delivery notes from SAP B1 with pagination support"""
     try:
         cache_key = f"delivery_notes_{customer_code}_{limit}"
@@ -592,7 +592,7 @@ def get_customer_delivery_note_detail_from_sap(customer_code, doc_num):
         frappe.logger().error(f"Error fetching SAP delivery note detail: {str(e)}")
         return None
 
-def get_customer_invoices_from_sap(customer_code, limit=100):
+def get_customer_invoices_from_sap(customer_code, limit=500):
     """Fetch customer invoices from SAP B1 with pagination support"""
     try:
         cache_key = f"invoices_{customer_code}_{limit}"
@@ -683,8 +683,116 @@ def get_customer_invoices_from_sap(customer_code, limit=100):
         frappe.logger().error(f"Error fetching invoices from SAP: {str(e)}")
         return []
 
+def get_customer_payments_from_sap(customer_code, limit=500):
+    """Fetch customer payment entries from SAP B1"""
+    try:
+        cache_key = f"payments_{customer_code}_{limit}"
+        cached_data = get_cached_data(cache_key)
+        if cached_data is not None:
+            frappe.logger().info(f"[SAP] Returning cached payments: {len(cached_data)} records")
+            return cached_data
+        
+        frappe.logger().info(f"[SAP] Fetching payments for customer: {customer_code} with limit: {limit}")
+        
+        all_payments = []
+        skip = 0
+        batch_size = 20  # SAP B1 default limit
+        max_batches = (limit // batch_size) + 1  # Prevent infinite loops
+        
+        for batch_num in range(max_batches):
+            # Focus on IncomingPayments as that's where customer payments are stored
+            try:
+                params = {
+                    '$filter': f"CardCode eq '{customer_code}'",
+                    '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocCurrency,TransferSum,TransferDate,TransferAccount,TransferReference,JournalRemarks,Remarks,DocType,PaymentType,Cancelled,CancelStatus',
+                    '$orderby': 'DocDate desc',
+                    '$top': batch_size,
+                    '$skip': skip
+                }
+                
+                frappe.logger().info(f"[SAP] Batch {batch_num + 1} - IncomingPayments params: {params}")
+                data = fetch_sap_data_with_session('IncomingPayments', params, None)
+                
+                if isinstance(data, dict) and 'value' in data:
+                    batch_data = data['value'] or []
+                elif isinstance(data, list):
+                    batch_data = data
+                else:
+                    batch_data = []
+                
+                frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Raw response: {len(batch_data)} records")
+                
+                if not batch_data:
+                    frappe.logger().info(f"[SAP] No more data in batch {batch_num + 1}, stopping pagination")
+                    break
+                
+                # Process payment data
+                for payment in batch_data:
+                    # Determine status based on Cancelled field
+                    cancelled = payment.get('Cancelled', 'tNO')
+                    cancel_status = payment.get('CancelStatus', 'csNo')
+                    
+                    if cancelled == 'tYES' or cancel_status == 'csYes':
+                        status = 'Cancelled'
+                    else:
+                        status = 'Completed'  # IncomingPayments are typically completed when created
+                    
+                    # Get the payment amount (TransferSum is the actual payment amount)
+                    transfer_sum = payment.get('TransferSum', 0)
+                    cash_sum = payment.get('CashSum', 0)  # Fallback to cash sum if transfer sum is 0
+                    payment_amount = transfer_sum if transfer_sum > 0 else cash_sum
+                    
+                    payment_data = {
+                        'name': str(payment.get('DocNum', '')),
+                        'sap_doc_entry': payment.get('DocEntry'),
+                        'customer': str(payment.get('CardCode', '')),
+                        'customer_name': payment.get('CardName', ''),
+                        'posting_date': payment.get('DocDate'),
+                        'transfer_date': payment.get('TransferDate'),
+                        'amount': payment_amount,
+                        'currency': payment.get('DocCurrency', 'SAR'),
+                        'status': status,
+                        'comments': payment.get('Remarks', ''),
+                        'journal_remarks': payment.get('JournalRemarks', ''),
+                        'transfer_account': payment.get('TransferAccount', ''),
+                        'transfer_reference': payment.get('TransferReference', ''),
+                        'doc_type': payment.get('DocType', ''),
+                        'payment_type': payment.get('PaymentType', ''),
+                        'cancelled': cancelled,
+                        'cancel_status': cancel_status
+                    }
+                    all_payments.append(payment_data)
+                
+                # Check if we've reached the desired limit
+                if len(all_payments) >= limit:
+                    frappe.logger().info(f"[SAP] Reached limit of {limit}, stopping pagination")
+                    break
+                
+                # Check if we got fewer records than batch_size (end of data)
+                if len(batch_data) < batch_size:
+                    frappe.logger().info(f"[SAP] Got {len(batch_data)} records (less than batch size {batch_size}), end of data")
+                    break
+                
+                skip += batch_size
+                
+            except Exception as e:
+                frappe.logger().error(f"[SAP] Error in batch {batch_num + 1}: {str(e)}")
+                break
+        
+        # Limit to requested amount
+        all_payments = all_payments[:limit]
+        
+        # Cache the result
+        set_cached_data(cache_key, all_payments)
+        frappe.logger().info(f"[SAP] Processed {len(all_payments)} payments for customer {customer_code}")
+        return all_payments
+        
+    except Exception as e:
+        frappe.logger().error(f"Error fetching payments from SAP: {str(e)}")
+        return []
+
 def get_customer_statement_from_sap(customer_code, from_date, to_date, limit=500):
-    """Generate customer statement from SAP invoice data"""
+    """Generate customer statement from SAP invoice and payment data with proper reconciliation"""
     try:
         cache_key = f"customer_statement_{customer_code}_{from_date}_{to_date}_{limit}"
         cached_data = get_cached_data(cache_key)
@@ -694,102 +802,82 @@ def get_customer_statement_from_sap(customer_code, from_date, to_date, limit=500
         
         frappe.logger().info(f"[SAP] Generating customer statement for customer: {customer_code} from {from_date} to {to_date}")
         
-        # Fetch invoices from SAP with date filtering
-        params = {
-            '$filter': f"CardCode eq '{customer_code}' and DocDate ge datetime'{from_date}T00:00:00' and DocDate le datetime'{to_date}T23:59:59'",
-            '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate',
-            '$orderby': 'DocDate asc',
-            '$top': limit
-        }
+        # Step 1: Get all invoices (not just date-filtered ones for proper balance calculation)
+        all_invoices = get_customer_invoices_from_sap(customer_code, limit=1000)
+        frappe.logger().info(f"[SAP] Found {len(all_invoices)} total invoices for customer {customer_code}")
         
-        frappe.logger().info(f"[SAP] Customer statement params: {params}")
-        data = fetch_sap_data_with_session('Invoices', params, None)
+        # Step 2: Get all payments
+        all_payments = get_customer_payments_from_sap(customer_code, limit=1000)
+        frappe.logger().info(f"[SAP] Found {len(all_payments)} total payments for customer {customer_code}")
         
-        if isinstance(data, dict) and 'value' in data:
-            invoices_data = data['value'] or []
-        elif isinstance(data, list):
-            invoices_data = data
-        else:
-            invoices_data = []
-        
-        frappe.logger().info(f"[SAP] Found {len(invoices_data)} invoices for statement")
-        
-        # Process invoices into statement format
+        # Step 3: Create combined transaction list
         transactions = []
-        running_balance = 0
         
-        for inv in invoices_data:
-            sap_status = inv.get('DocumentStatus')
-            status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
-            
-            # Calculate amounts
-            grand_total = inv.get('DocTotal', 0)
-            paid_amount = inv.get('PaidToDate', 0)
-            outstanding_amount = grand_total - paid_amount
-            
-            # For customer statement, we show:
-            # - Invoice amount as debit (what customer owes)
-            # - Paid amount as credit (what customer has paid)
-            
-            # Add invoice transaction
-            if grand_total > 0:
+        # Add invoices as debit transactions
+        for inv in all_invoices:
+            if inv.get('grand_total', 0) > 0:
                 transactions.append({
-                    'date': inv.get('DocDate'),
+                    'date': inv.get('posting_date'),
                     'document_type': 'Sales Invoice',
-                    'document_number': str(inv.get('DocNum', '')),
-                    'description': f"Invoice {inv.get('DocNum', '')} - {inv.get('CardName', '')}",
-                    'debit': grand_total,
+                    'document_number': str(inv.get('name', '')),
+                    'description': f"Invoice {inv.get('name', '')} - {inv.get('customer_name', '')}",
+                    'debit': inv.get('grand_total', 0),
                     'credit': 0,
-                    'balance': running_balance + grand_total,
-                    'currency': inv.get('DocCurrency', ''),
-                    'due_date': inv.get('DocDueDate'),
-                    'status': status,
-                    'remarks': inv.get('Comments', '')
+                    'balance': 0,  # Will be calculated later
+                    'currency': inv.get('currency', 'SAR'),
+                    'due_date': inv.get('due_date'),
+                    'status': inv.get('status', ''),
+                    'remarks': inv.get('comments', ''),
+                    'outstanding_amount': inv.get('outstanding_amount', 0),
+                    'paid_amount': inv.get('paid_amount', 0)
                 })
-                running_balance += grand_total
-            
-            # Add payment transaction if there's a paid amount
-            if paid_amount > 0:
+        
+        # Add payments as credit transactions
+        for payment in all_payments:
+            if payment.get('amount', 0) > 0 and payment.get('status') != 'Cancelled':
                 transactions.append({
-                    'date': inv.get('DocDate'),  # Using invoice date for payment (SAP doesn't provide payment date)
+                    'date': payment.get('posting_date'),
                     'document_type': 'Payment',
-                    'document_number': f"Payment for {inv.get('DocNum', '')}",
-                    'description': f"Payment received for Invoice {inv.get('DocNum', '')}",
+                    'document_number': str(payment.get('name', '')),
+                    'description': f"Payment {payment.get('name', '')} - {payment.get('customer_name', '')}",
                     'debit': 0,
-                    'credit': paid_amount,
-                    'balance': running_balance - paid_amount,
-                    'currency': inv.get('DocCurrency', ''),
+                    'credit': payment.get('amount', 0),
+                    'balance': 0,  # Will be calculated later
+                    'currency': payment.get('currency', 'SAR'),
                     'due_date': None,
-                    'status': 'Paid',
-                    'remarks': f"Payment against Invoice {inv.get('DocNum', '')}"
+                    'status': payment.get('status', ''),
+                    'remarks': payment.get('journal_remarks', ''),
+                    'transfer_reference': payment.get('transfer_reference', ''),
+                    'transfer_date': payment.get('transfer_date')
                 })
-                running_balance -= paid_amount
         
-        # Calculate opening balance (invoices before from_date)
-        opening_params = {
-            '$filter': f"CardCode eq '{customer_code}' and DocDate lt datetime'{from_date}T00:00:00'",
-            '$select': 'DocTotal,PaidToDate',
-            '$top': 1000  # Get all historical invoices
-        }
+        # Step 4: Sort all transactions by date
+        transactions.sort(key=lambda x: x['date'] if x['date'] else '1900-01-01')
         
-        opening_data = fetch_sap_data_with_session('Invoices', opening_params, None)
-        opening_invoices = []
-        if isinstance(opening_data, dict) and 'value' in opening_data:
-            opening_invoices = opening_data['value'] or []
-        elif isinstance(opening_data, list):
-            opening_invoices = opening_data
-        
+        # Step 5: Calculate running balance and filter by date range
+        running_balance = 0
+        filtered_transactions = []
         opening_balance = 0
-        for inv in opening_invoices:
-            grand_total = inv.get('DocTotal', 0)
-            paid_amount = inv.get('PaidToDate', 0)
-            opening_balance += grand_total - paid_amount
         
-        frappe.logger().info(f"[SAP] Opening balance: {opening_balance}")
+        for transaction in transactions:
+            transaction_date = transaction['date']
+            
+            # Calculate running balance
+            running_balance += transaction['debit'] - transaction['credit']
+            transaction['balance'] = running_balance
+            
+            # Check if transaction is before the from_date (for opening balance)
+            if transaction_date and transaction_date < from_date:
+                opening_balance = running_balance
+                continue
+            
+            # Check if transaction is within the date range
+            if transaction_date and from_date <= transaction_date <= to_date:
+                filtered_transactions.append(transaction)
         
-        # Add opening balance transaction
+        # Step 6: Add opening balance transaction if needed
         if opening_balance != 0:
-            transactions.insert(0, {
+            opening_transaction = {
                 'date': from_date,
                 'document_type': 'Opening Balance',
                 'document_number': 'OPEN',
@@ -797,32 +885,46 @@ def get_customer_statement_from_sap(customer_code, from_date, to_date, limit=500
                 'debit': opening_balance if opening_balance > 0 else 0,
                 'credit': abs(opening_balance) if opening_balance < 0 else 0,
                 'balance': opening_balance,
-                'currency': 'SAR',  # Default currency
+                'currency': 'SAR',
                 'due_date': None,
                 'status': 'Balance',
                 'remarks': 'Opening balance from previous period'
-            })
+            }
+            filtered_transactions.insert(0, opening_transaction)
+        
+        # Step 7: Recalculate running balance for filtered transactions
+        current_balance = opening_balance
+        for transaction in filtered_transactions:
+            if transaction['document_type'] != 'Opening Balance':
+                current_balance += transaction['debit'] - transaction['credit']
+                transaction['balance'] = current_balance
+        
+        # Step 8: Prepare statement data
+        customer_name = all_invoices[0].get('customer_name', '') if all_invoices else (all_payments[0].get('customer_name', '') if all_payments else '')
         
         statement_data = {
             'customer_code': customer_code,
-            'customer_name': invoices_data[0].get('CardName', '') if invoices_data else '',
+            'customer_name': customer_name,
             'from_date': from_date,
             'to_date': to_date,
             'opening_balance': opening_balance,
-            'closing_balance': running_balance,
-            'transactions': transactions,
+            'closing_balance': current_balance,
+            'transactions': filtered_transactions,
             'summary': {
-                'total_invoices': len([t for t in transactions if t['document_type'] == 'Sales Invoice']),
-                'total_payments': len([t for t in transactions if t['document_type'] == 'Payment']),
-                'total_transactions': len(transactions)
+                'total_invoices': len([t for t in filtered_transactions if t['document_type'] == 'Sales Invoice']),
+                'total_payments': len([t for t in filtered_transactions if t['document_type'] == 'Payment']),
+                'total_transactions': len(filtered_transactions),
+                'total_invoice_amount': sum(t['debit'] for t in filtered_transactions if t['document_type'] == 'Sales Invoice'),
+                'total_payment_amount': sum(t['credit'] for t in filtered_transactions if t['document_type'] == 'Payment')
             }
         }
         
         # Cache the result
         set_cached_data(cache_key, statement_data)
-        frappe.logger().info(f"[SAP] Generated customer statement with {len(transactions)} transactions for customer {customer_code}")
+        frappe.logger().info(f"[SAP] Generated customer statement with {len(filtered_transactions)} transactions for customer {customer_code}")
+        frappe.logger().info(f"[SAP] Opening balance: {opening_balance}, Closing balance: {current_balance}")
         return statement_data
-    
+        
     except Exception as e:
         frappe.logger().error(f"Error generating customer statement from SAP: {str(e)}")
         return None

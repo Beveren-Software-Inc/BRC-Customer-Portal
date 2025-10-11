@@ -838,6 +838,36 @@ export const getSapCustomerStatement = async (
   }
 };
 
+/**
+ * Get Customer Payments from SAP B1
+ */
+export const getSapCustomerPayments = async (): Promise<any> => {
+  try {
+    const response = await fetch(
+      `/api/method/customer_portal.api.customer_balance.get_customer_payments`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Frappe-CSRF-Token": getCSRFToken(),
+        },
+      }
+    );
+
+    const data = await response.json();
+    
+    if (data.message && data.message.success) {
+      return data.message.data;
+    } else {
+      console.error("Error fetching customer payments from SAP:", data.message?.message);
+      throw new Error(data.message?.message || "Failed to fetch customer payments");
+    }
+  } catch (error) {
+    console.error("Error fetching customer payments:", error);
+    throw error;
+  }
+};
+
 export const getCustomerStatementData = async (
   filters: CustomerStatementFilter
 ): Promise<any> => {

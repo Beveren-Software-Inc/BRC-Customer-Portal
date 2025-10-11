@@ -1,235 +1,260 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, Download, Search } from "lucide-react"
+import { Eye, Download, Search, RefreshCw, Loader2 } from "lucide-react"
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/utils"
 import { Link } from "react-router-dom"
 import { DataTablePagination } from "../ui/data-table-pagination"
 import { useCurrency } from "@/context/currency-context"
-
-// Mock data for payments
-const paymentsData = [
-  {
-    id: "PMT-2023-001",
-    date: "2023-03-19",
-    invoiceId: "INV-2023-002",
-    status: "Completed",
-    amount: 1850.0,
-    customer: "Global Industries Ltd",
-    method: "Credit Card",
-    reference: "CC-7890",
-  },
-  {
-    id: "PMT-2023-002",
-    date: "2023-03-17",
-    invoiceId: "INV-2023-005",
-    status: "Completed",
-    amount: 3560.0,
-    customer: "Innovate Partners",
-    method: "Bank Transfer",
-    reference: "BT-4567",
-  },
-  {
-    id: "PMT-2023-003",
-    date: "2023-03-15",
-    invoiceId: "INV-2023-008",
-    status: "Completed",
-    amount: 4250.0,
-    customer: "Alliance Group",
-    method: "PayPal",
-    reference: "PP-2345",
-  },
-  {
-    id: "PMT-2023-004",
-    date: "2023-03-12",
-    invoiceId: "INV-2023-006",
-    status: "Processing",
-    amount: 2820.0,
-    customer: "First Choice Supplies",
-    method: "Bank Transfer",
-    reference: "BT-5678",
-  },
-  {
-    id: "PMT-2023-005",
-    date: "2023-03-11",
-    invoiceId: "INV-2023-006",
-    status: "Completed",
-    amount: 2820.0,
-    customer: "First Choice Supplies",
-    method: "Check",
-    reference: "CHK-1234",
-  },
-  {
-    id: "PMT-2023-006",
-    date: "2023-03-09",
-    invoiceId: "INV-2023-003",
-    status: "Failed",
-    amount: 4720.0,
-    customer: "Tech Solutions Inc",
-    method: "Credit Card",
-    reference: "CC-9012",
-  },
-  {
-    id: "PMT-2023-007",
-    date: "2023-03-05",
-    invoiceId: "INV-2023-007",
-    status: "Processing",
-    amount: 1980.0,
-    customer: "Premier Products",
-    method: "Bank Transfer",
-    reference: "BT-6789",
-  },
-  {
-    id: "PMT-2023-008",
-    date: "2023-03-02",
-    invoiceId: "INV-2023-001",
-    status: "Refunded",
-    amount: 1625.0,
-    customer: "Acme Corporation",
-    method: "Credit Card",
-    reference: "CC-3456",
-  },
-]
+import { useQuery } from "@tanstack/react-query"
+import { getSapCustomerPayments } from "@/lib/api"
+import { toast } from "@/components/ui/use-toast"
+import { useTranslation } from "react-i18next"
 
 export default function PaymentsList() {
-  const { currency } = useCurrency()
-  const [searchTerm, setSearchTerm] = useState("")
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [currentPage, setCurrentPage] = useState(0)
-  const [pageSize, setPageSize] = useState(5)
+  const { t } = useTranslation();
+  const { currency } = useCurrency();
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(0);
+  const [pageSize, setPageSize] = useState(20);
 
-  // Filter and sort data
-  const filteredData = paymentsData.filter((payment) => {
-    const matchesSearch =
-      payment.id.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.customer.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.invoiceId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      payment.reference.toLowerCase().includes(searchTerm.toLowerCase())
+  // Fetch payments data from SAP
+  const {
+    data: paymentsData = [],
+    isLoading,
+    error,
+    refetch,
+    isRefetching
+  } = useQuery({
+    queryKey: ["sap-payments"],
+    queryFn: getSapCustomerPayments,
+    staleTime: 300000, // 5 minutes
+    retry: 2,
+  });
 
-    const matchesStatus = statusFilter === "all" || payment.status.toLowerCase() === statusFilter.toLowerCase()
+  const handleRefresh = async () => {
+    try {
+      await refetch();
+      toast({
+        title: "Data Refreshed",
+        description: "Payment data has been refreshed successfully.",
+      });
+    } catch (error) {
+      toast({
+        variant: "destructive",
+        title: "Refresh Failed",
+        description: "Failed to refresh payment data. Please try again.",
+      });
+    }
+  };
 
-    return matchesSearch && matchesStatus
-  })
+  // Utility functions
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    } catch (error) {
+      return dateString;
+    }
+  };
 
-   const sortedData = filteredData.sort((a, b) => {
-  return new Date(b.date).getTime() - new Date(a.date).getTime();
-});
+  const formatCurrency = (amount: number, currencyCode: string = 'SAR') => {
+    if (typeof amount !== 'number') return '0.00';
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currencyCode,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(amount);
+    } catch (error) {
+      return `${amount.toFixed(2)} ${currencyCode}`;
+    }
+  };
 
-  // Paginate data
-  const paginatedData = sortedData.slice(currentPage * pageSize, (currentPage + 1) * pageSize)
+  if (error) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold tracking-tight">{t('Payments')}</h1>
+            <p className="text-muted-foreground">{t('View your payment history')}</p>
+          </div>
+        </div>
+        <Card>
+          <CardContent className="flex items-center justify-center py-8">
+            <div className="text-center">
+              <p className="text-muted-foreground mb-4">{t('Failed to load payments')}</p>
+              <Button onClick={handleRefresh} variant="outline">
+                <RefreshCw className="h-4 w-4 mr-2" />
+                {t('Try Again')}
+              </Button>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  // Filter payments based on search and status
+  const filteredPayments = paymentsData.filter((payment: any) => {
+    const matchesSearch = 
+      payment.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      payment.customer_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      payment.transfer_reference?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      payment.comments?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      payment.journal_remarks?.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesStatus = statusFilter === "all" || payment.status?.toLowerCase() === statusFilter.toLowerCase();
+
+    return matchesSearch && matchesStatus;
+  });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredPayments.length / pageSize);
+  const startIndex = currentPage * pageSize;
+  const paginatedPayments = filteredPayments.slice(startIndex, startIndex + pageSize);
 
   return (
-    <div className="flex flex-col gap-6 w-full">
+    <div className="space-y-6">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight">{t('Payments')}</h1>
+          <p className="text-muted-foreground">{t('View your payment history')}</p>
+        </div>
+        <Button 
+          onClick={handleRefresh} 
+          variant="outline" 
+          disabled={isRefetching}
+          className="flex items-center gap-2"
+        >
+          <RefreshCw className={`h-4 w-4 ${isRefetching ? 'animate-spin' : ''}`} />
+          {t('Refresh')}
+        </Button>
+      </div>
+
       <Card>
         <CardHeader>
-          <CardTitle>Payments</CardTitle>
+          <CardTitle className="flex items-center justify-between">
+            <span>{t('Payment History')}</span>
+            <div className="flex items-center gap-2">
+              <span className="text-sm text-muted-foreground">
+                {t('Total')}: {filteredPayments.length} {t('payments')}
+              </span>
+            </div>
+          </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="flex flex-col gap-4">
-            <div className="flex flex-col sm:flex-row gap-4 justify-between">
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                <Input
-                  type="search"
-                  placeholder="Search payments..."
-                  className="pl-8"
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                />
-              </div>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-full sm:w-40">
-                  <SelectValue placeholder="Filter by status" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Statuses</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="processing">Processing</SelectItem>
-                  <SelectItem value="failed">Failed</SelectItem>
-                  <SelectItem value="refunded">Refunded</SelectItem>
-                </SelectContent>
-              </Select>
+          {/* Filters */}
+          <div className="flex items-center gap-4 mb-6">
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-muted-foreground h-4 w-4" />
+              <Input
+                placeholder={t('Search payments...')}
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
             </div>
+            <Select value={statusFilter} onValueChange={setStatusFilter}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder={t('Filter by status')} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">{t('All Status')}</SelectItem>
+                <SelectItem value="completed">{t('Completed')}</SelectItem>
+                <SelectItem value="cancelled">{t('Cancelled')}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
-            <div className="rounded-md border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Payment ID</TableHead>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Date</TableHead>
-                    <TableHead>Method</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Amount</TableHead>
-                    <TableHead className="text-right">Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {paginatedData.length > 0 ? (
-                    paginatedData.map((payment) => (
-                      <TableRow key={payment.id}>
-                        <TableCell className="font-medium">
-                          <Link to={`/payments/${payment.id}`} className="text-blue-600 hover:underline">
-                            {payment.id}
-                          </Link>
-                        </TableCell>
-                        <TableCell>
-                          <Link to={`/sales-invoices/${payment.invoiceId}`} className="text-blue-600 hover:underline">
-                            {payment.invoiceId}
-                          </Link>
-                        </TableCell>
-                        <TableCell>{payment.customer}</TableCell>
-                        <TableCell>{formatDate(payment.date)}</TableCell>
-                        <TableCell>{payment.method}</TableCell>
-                        <TableCell>
-                          <Badge variant={getStatusColor(payment.status)}>{payment.status}</Badge>
-                        </TableCell>
-                        <TableCell className="text-right">{formatCurrency(payment.amount, currency)}</TableCell>
-                        <TableCell className="text-right">
-                          <div className="flex justify-end gap-2">
-                            <Button variant="ghost" size="icon" asChild>
-                              <Link to={`/payments/${payment.id}`}>
-                                <Eye className="h-4 w-4" />
-                                <span className="sr-only">View</span>
-                              </Link>
-                            </Button>
-                            <Button variant="ghost" size="icon">
-                              <Download className="h-4 w-4" />
-                              <span className="sr-only">Download</span>
-                            </Button>
-                          </div>
+          {/* Loading State */}
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              <span className="ml-2 text-muted-foreground">{t('Loading payments...')}</span>
+            </div>
+          ) : (
+            <>
+              {/* Table */}
+              <div className="border rounded-md">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>{t('Payment #')}</TableHead>
+                      <TableHead>{t('Date')}</TableHead>
+                      <TableHead>{t('Customer')}</TableHead>
+                      <TableHead>{t('Amount')}</TableHead>
+                      <TableHead>{t('Transfer Date')}</TableHead>
+                      <TableHead>{t('Reference')}</TableHead>
+                      <TableHead>{t('Status')}</TableHead>
+                      <TableHead>{t('Actions')}</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {paginatedPayments.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={8} className="text-center py-8 text-muted-foreground">
+                          {t('No payments found')}
                         </TableCell>
                       </TableRow>
-                    ))
-                  ) : (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center py-6">
-                        No payments found
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </div>
+                    ) : (
+                      paginatedPayments.map((payment: any) => (
+                        <TableRow key={payment.name}>
+                          <TableCell className="font-medium">{payment.name}</TableCell>
+                          <TableCell>{formatDate(payment.posting_date)}</TableCell>
+                          <TableCell>{payment.customer_name}</TableCell>
+                          <TableCell>{formatCurrency(payment.amount, payment.currency)}</TableCell>
+                          <TableCell>{formatDate(payment.transfer_date)}</TableCell>
+                          <TableCell>{payment.transfer_reference || t('N/A')}</TableCell>
+                          <TableCell>
+                            <Badge variant={payment.status === 'Completed' ? 'default' : payment.status === 'Cancelled' ? 'destructive' : 'secondary'}>
+                              {payment.status}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link to={`/payments/${payment.name}`}>
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                          </TableCell>
+                        </TableRow>
+                      ))
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
 
-            <DataTablePagination
-              pageSize={pageSize}
-              setPageSize={setPageSize}
-              currentPage={currentPage}
-              setCurrentPage={setCurrentPage}
-              totalCount={filteredData.length}
-            />
-          </div>
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div className="mt-4">
+                  <DataTablePagination
+                    currentPage={currentPage}
+                    setCurrentPage={setCurrentPage}
+                    pageSize={pageSize}
+                    setPageSize={setPageSize}
+                    totalCount={filteredPayments.length}
+                  />
+                </div>
+              )}
+            </>
+          )}
         </CardContent>
       </Card>
     </div>
-  )
+  );
 }
 
