@@ -267,6 +267,44 @@ def get_customer_delivery_note_detail(doc_num: str = None):
         return {"error": True, "message": f"Error fetching delivery note detail: {str(e)}"}
 
 @frappe.whitelist()
+def get_customer_statement_from_sap(from_date=None, to_date=None):
+    """Get customer statement directly from SAP B1"""
+    try:
+        customer_code = sap_api_utils.get_customer_code_from_user()
+        if not customer_code:
+            return {
+                "error": True,
+                "message": "No customer code found for current user"
+            }
+        
+        if not from_date or not to_date:
+            return {
+                "error": True,
+                "message": "From date and to date are required"
+            }
+        
+        # Generate statement from SAP
+        statement_data = sap_api_utils.get_customer_statement_from_sap(customer_code, from_date, to_date)
+        
+        if not statement_data:
+            return {
+                "error": True,
+                "message": "Failed to generate customer statement from SAP"
+            }
+        
+        return {
+            "success": True,
+            "data": statement_data
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error fetching customer statement from SAP: {str(e)}", "Customer Portal")
+        return {
+            "error": True,
+            "message": f"Error fetching customer statement: {str(e)}"
+        }
+
+@frappe.whitelist()
 def get_customer_invoices():
     """Get customer invoices directly from SAP B1"""
     try:
