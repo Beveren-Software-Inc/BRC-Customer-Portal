@@ -804,6 +804,40 @@ export const openCustomerStatementPrintPreview = async (
 /**
  * Get Customer Statement data for preview (without download)
  */
+export const getSapCustomerStatement = async (
+  fromDate: string,
+  toDate: string
+): Promise<any> => {
+  try {
+    const response = await fetch(
+      `/api/method/customer_portal.api.customer_balance.get_customer_statement_from_sap`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Frappe-CSRF-Token": getCSRFToken(),
+        },
+        body: JSON.stringify({
+          from_date: fromDate,
+          to_date: toDate,
+        }),
+      }
+    );
+
+    const data = await response.json();
+    
+    if (data.message && data.message.success) {
+      return data.message.data;
+    } else {
+      console.error("Error fetching customer statement from SAP:", data.message?.message);
+      throw new Error(data.message?.message || "Failed to fetch customer statement");
+    }
+  } catch (error) {
+    console.error("Error fetching customer statement:", error);
+    throw error;
+  }
+};
+
 export const getCustomerStatementData = async (
   filters: CustomerStatementFilter
 ): Promise<any> => {

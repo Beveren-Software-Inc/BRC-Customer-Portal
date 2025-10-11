@@ -826,6 +826,8 @@ def get_customer_statement_from_sap(customer_code, from_date, to_date, limit=500
     except Exception as e:
         frappe.logger().error(f"Error generating customer statement from SAP: {str(e)}")
         return None
+
+def get_customer_invoice_detail_from_sap(customer_code, doc_num):
     """Fetch a single invoice with items from SAP B1 by DocNum using $expand (single call with fallback)."""
     try:
         frappe.logger().info(f"[SAP] Fetching invoice detail DocNum={doc_num}, CardCode={customer_code}")

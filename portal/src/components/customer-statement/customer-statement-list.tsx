@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Badge } from "@/components/ui/badge";
 import {
   Select,
   SelectContent,
@@ -41,6 +42,7 @@ import { toast } from "@/components/ui/use-toast";
 import {
   downloadCustomerStatement,
   getCustomerStatementData,
+  getSapCustomerStatement,
   CustomerStatementFilter,
 } from "@/lib/api";
 import { useApi } from "@/hooks/useApi";
@@ -56,6 +58,35 @@ export default function CustomerStatementList() {
   const [toDate, setToDate] = useState("");
   const [format, setFormat] = useState<"PDF" | "Excel">("PDF");
   const [showCustomerDialog, setShowCustomerDialog] = useState(false);
+
+  // Utility functions
+  const formatDate = (dateString: string) => {
+    if (!dateString) return '';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      });
+    } catch (error) {
+      return dateString;
+    }
+  };
+
+  const formatCurrency = (amount: number, currency: string = 'SAR') => {
+    if (typeof amount !== 'number') return '0.00';
+    try {
+      return new Intl.NumberFormat('en-US', {
+        style: 'currency',
+        currency: currency,
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+      }).format(amount);
+    } catch (error) {
+      return `${amount.toFixed(2)} ${currency}`;
+    }
+  };
 
   const { t } = useTranslation();
 
@@ -152,14 +183,23 @@ export default function CustomerStatementList() {
 
     setIsLoading(true);
     try {
-      const filters: CustomerStatementFilter = {
-        from_date: fromDate,
-        to_date: toDate,
-        customer: customerCode,
-      };
-
-      const data = await getCustomerStatementData(filters);
-      setStatementData(data);
+      console.log("Fetching customer statement from SAP...");
+      const data = await getSapCustomerStatement(fromDate, toDate);
+      console.log("SAP Customer statement data:", data);
+      
+      if (data && data.transactions) {
+        setStatementData(data);
+        toast({
+          title: "Statement Generated",
+          description: `Found ${data.transactions.length} transactions for the selected period.`,
+        });
+      } else {
+        toast({
+          variant: "destructive",
+          title: "No Data Found",
+          description: "No transactions found for the selected customer and date range.",
+        });
+      }
     } catch (error) {
       console.error("Failed to fetch statement data:", error);
       const errorMessage =
@@ -257,7 +297,7 @@ export default function CustomerStatementList() {
       );
     }
 
-    if (!statementData || !statementData.result) {
+    if (!statementData || !statementData.transactions) {
       return (
         <div className="flex items-center justify-center py-8 text-muted-foreground">
           <FileText className="h-8 w-8 mr-2 opacity-50" />
@@ -266,9 +306,9 @@ export default function CustomerStatementList() {
       );
     }
 
-    const { columns, result } = statementData;
+    const { transactions, customer_name, opening_balance, closing_balance, summary } = statementData;
 
-    if (!result || result.length === 0) {
+    if (!transactions || transactions.length === 0) {
       return (
         <div className="flex items-center justify-center py-8 text-muted-foreground">
           <FileText className="h-8 w-8 mr-2 opacity-50" />
@@ -278,15 +318,15 @@ export default function CustomerStatementList() {
     }
 
     // Debug: Log the data structure to understand what we're working with
-    console.log("Statement data:", { columns, result });
-    console.log("First result item:", result[0]);
+    console.log("SAP Statement data:", { transactions, customer_name, opening_balance, closing_balance });
+    console.log("First transaction:", transactions[0]);
 
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">{t('Statement Preview')}</h3>
           <div className="text-sm text-muted-foreground">
-            {result.length} {t('transaction', { count: result.length })} {t('found')}
+            {transactions.length} {t('transaction', { count: transactions.length })} {t('found')}
           </div>
         </div>
 
@@ -295,133 +335,49 @@ export default function CustomerStatementList() {
             <Table>
               <TableHeader>
                 <TableRow>
-                  {columns?.map((column: any, index: number) => (
-                    <TableHead key={index} className="whitespace-nowrap">
-                      {t(column.label || column.fieldname || `Column ${index + 1}`)}
-                    </TableHead>
-                  ))}
+                  <TableHead className="w-[100px]">Date</TableHead>
+                  <TableHead className="w-[120px]">Type</TableHead>
+                  <TableHead className="w-[120px]">Number</TableHead>
+                  <TableHead className="min-w-[200px]">Description</TableHead>
+                  <TableHead className="w-[100px] text-right">Debit</TableHead>
+                  <TableHead className="w-[100px] text-right">Credit</TableHead>
+                  <TableHead className="w-[120px] text-right">Balance</TableHead>
+                  <TableHead className="w-[100px]">Status</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {result.slice(0, 100).map((row: any, rowIndex: number) => {
-                  // Handle different data structures
-                  let rowData: any[] = [];
-
-                  if (Array.isArray(row)) {
-                    // If row is already an array (expected format)
-                    rowData = row;
-                  } else if (typeof row === "object" && row !== null) {
-                    // If row is an object, convert to array using column order
-                    rowData =
-                      columns?.map((col: any) => row[col.fieldname]) ||
-                      Object.values(row);
-                  } else {
-                    // Fallback: wrap single value in array
-                    rowData = [row];
-                  }
-
-                  // Check if this is a Closing Balance row
-                  const isSpecialRow = rowData[1] === "Closing Balance";
-
-                  return (
-                    <TableRow
-                      key={rowIndex}
-                      className={isSpecialRow ? "font-bold bg-muted/50" : ""}
-                    >
-                      {rowData.map((cell: any, cellIndex: number) => {
-                        // Format currency values
-                        let displayValue = cell;
-                        if (
-                          typeof cell === "number" &&
-                          columns?.[cellIndex]?.fieldtype === "Currency"
-                        ) {
-                          displayValue = new Intl.NumberFormat("en-US", {
-                            style: "currency",
-                            currency: "SAR",
-                            minimumFractionDigits: 2,
-                          }).format(cell);
-                        } else if (cell?.toString) {
-                          displayValue = cell.toString();
-                        } else {
-                          displayValue = "";
-                        }
-
-                        // Handle multi-line remarks
-                        const isRemarksColumn =
-                          columns?.[cellIndex]?.fieldname === "remarks";
-                        if (
-                          isRemarksColumn &&
-                          displayValue &&
-                          displayValue.includes("\n")
-                        ) {
-                          return (
-                            <TableCell
-                              key={cellIndex}
-                              className={`whitespace-nowrap ${
-                                isSpecialRow ? "font-bold" : ""
-                              }`}
-                            >
-                              {displayValue
-                                .split("\n")
-                                .map((line: string, lineIndex: number) => (
-                                  <div key={lineIndex}>{line}</div>
-                                ))}
-                            </TableCell>
-                          );
-                        }
-
-                        // Handle clickable links for Sales Invoice IDs in Ref ID column
-                        const isRefIdColumn =
-                          columns?.[cellIndex]?.fieldname === "voucher_no";
-                        const voucherType = rowData[1]; // Ref Document column
-                        if (
-                          isRefIdColumn &&
-                          voucherType === "Sales Invoice" &&
-                          displayValue &&
-                          displayValue !== ""
-                        ) {
-                          return (
-                            <TableCell
-                              key={cellIndex}
-                              className={`whitespace-nowrap ${
-                                isSpecialRow ? "font-bold" : ""
-                              }`}
-                            >
-                              <a
-                                href={`/sales-invoices/${displayValue}`}
-                                className="text-blue-600 hover:text-blue-800 hover:underline"
-                                onClick={(e) => {
-                                  e.preventDefault();
-                                  // Navigate to the invoice page
-                                  window.location.href = `/sales-invoices/${displayValue}`;
-                                }}
-                              >
-                                {displayValue}
-                              </a>
-                            </TableCell>
-                          );
-                        }
-
-                        return (
-                          <TableCell
-                            key={cellIndex}
-                            className={`whitespace-nowrap ${
-                              isSpecialRow ? "font-bold" : ""
-                            }`}
-                          >
-                            {displayValue || ""}
-                          </TableCell>
-                        );
-                      })}
-                    </TableRow>
-                  );
-                })}
+                {transactions.map((transaction: any, index: number) => (
+                  <TableRow key={index}>
+                    <TableCell className="font-medium">
+                      {formatDate(transaction.date)}
+                    </TableCell>
+                    <TableCell>{transaction.document_type}</TableCell>
+                    <TableCell>{transaction.document_number}</TableCell>
+                    <TableCell className="max-w-xs truncate">
+                      {transaction.description}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {transaction.debit > 0 ? formatCurrency(transaction.debit, transaction.currency) : '-'}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {transaction.credit > 0 ? formatCurrency(transaction.credit, transaction.currency) : '-'}
+                    </TableCell>
+                    <TableCell className="text-right font-medium">
+                      {formatCurrency(transaction.balance, transaction.currency)}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={transaction.status === 'Paid' ? 'default' : 'secondary'}>
+                        {transaction.status}
+                      </Badge>
+                    </TableCell>
+                  </TableRow>
+                ))}
               </TableBody>
             </Table>
           </div>
-          {result.length > 100 && (
+          {transactions.length > 100 && (
             <div className="p-3 bg-muted text-sm text-muted-foreground text-center">
-              {t('Showing first 100 rows of {count} total rows. Download for complete data.', { count: result.length })}
+              {t('Showing first 100 rows of {count} total rows. Download for complete data.', { count: transactions.length })}
             </div>
           )}
         </div>
