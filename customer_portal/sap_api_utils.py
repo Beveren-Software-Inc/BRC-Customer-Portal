@@ -159,6 +159,32 @@ def set_cached_data(cache_key, data):
     except Exception as e:
         frappe.logger().warning(f"Cache storage error: {str(e)}")
 
+def clear_cache_for_customer(customer_code):
+    """Clear all cached data for a specific customer"""
+    try:
+        # Clear all possible cache keys for this customer
+        cache_keys_to_clear = [
+            f"sap_customer_data_{customer_code}_delivery_notes_*",
+            f"sap_customer_data_{customer_code}_invoices_*", 
+            f"sap_customer_data_{customer_code}_orders_*",
+            f"sap_customer_data_{customer_code}_balance",
+            f"delivery_notes_{customer_code}_*",
+            f"invoices_{customer_code}_*",
+            f"orders_{customer_code}_*"
+        ]
+        
+        for pattern in cache_keys_to_clear:
+            try:
+                frappe.cache().delete_keys(pattern)
+            except:
+                pass  # Ignore errors for individual key patterns
+        
+        frappe.logger().info(f"Cleared cache for customer: {customer_code}")
+        return True
+    except Exception as e:
+        frappe.logger().error(f"Error clearing cache for customer {customer_code}: {str(e)}")
+        return False
+
 def fetch_sap_data_with_session(data_document, params=None, customer_code=None):
     """Fetch data from SAP B1 with session management"""
     try:
@@ -281,99 +307,88 @@ def get_customer_balance_from_sap(customer_code):
         frappe.log_error(f"Error fetching customer balance from SAP: {str(e)}", "Customer Portal SAP")
         return None
 
-def get_customer_invoices_from_sap(customer_code, limit=50):
-    """Fetch customer invoices directly from SAP B1"""
-    cache_key = get_cache_key(customer_code, f'invoices_{limit}')
-    
-    # Check cache first
-    cached_data = get_cached_data(cache_key)
-    if cached_data:
-        return cached_data
-    
-    # Fetch from SAP
-    params = {
-        '$select': 'DocNum,DocEntry,CardCode,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus',
-        '$filter': f"CardCode eq '{customer_code}'",
-        '$orderby': 'DocDate desc',
-        '$top': limit
-    }
-    
-    data = fetch_sap_data_with_session('Invoices', params, customer_code)
-    
-    if data:
-        invoices = []
-        for invoice in data:
-            invoice_data = {
-                'name': invoice.get('DocNum'),
-                'sap_doc_entry': invoice.get('DocEntry'),
-                'customer': invoice.get('CardCode'),
-                'posting_date': invoice.get('DocDate'),
-                'due_date': invoice.get('DocDueDate'),
-                'grand_total': invoice.get('DocTotal', 0),
-                'currency': invoice.get('DocCurrency'),
-                'status': invoice.get('DocumentStatus'),
-                'outstanding_amount': invoice.get('DocTotal', 0)  # Simplified for now
-            }
-            invoices.append(invoice_data)
-        
-        # Cache the result
-        set_cached_data(cache_key, invoices)
-        return invoices
-    
-    return []
 
-def get_customer_orders_from_sap(customer_code, limit=50):
-    """Fetch customer sales orders directly from SAP B1"""
-    cache_key = get_cache_key(customer_code, f'orders_{limit}')
-    
-    # Check cache first
-    cached_data = get_cached_data(cache_key)
-    if cached_data:
-        frappe.logger().info(f"Returning cached orders data for {customer_code}")
-        return cached_data
-    
-    frappe.logger().info(f"Fetching orders from SAP for customer: {customer_code}")
-    
-    # Fetch from SAP (only important fields)
-    params = {
-        '$select': 'DocNum,DocEntry,CardCode,DocDate,DocTotal,DocCurrency,DocumentStatus',
-        '$filter': f"CardCode eq '{customer_code}'",
-        '$orderby': 'DocDate desc',
-        '$top': limit
-    }
-    
-    data = fetch_sap_data_with_session('Orders', params, customer_code)
-    frappe.logger().info(f"SAP orders response data: {data}")
-    frappe.logger().info(f"SAP orders response data type: {type(data)}")
-    frappe.logger().info(f"SAP orders response data length: {len(data) if data else 'None'}")
-    
-    if data:
-        orders = []
-        for order in data:
-            sap_status = order.get('DocumentStatus')
-            # Map SAP status to a simple label
-            status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
-            order_data = {
-                'name': order.get('DocNum'),
-                'sap_doc_entry': order.get('DocEntry'),
-                'customer': order.get('CardCode'),
-                'transaction_date': order.get('DocDate'),
-                'grand_total': order.get('DocTotal', 0),
-                'currency': order.get('DocCurrency'),
-                'status': status
-            }
-            frappe.logger().info(f"Processed order data: {order_data}")
-            orders.append(order_data)
+def get_customer_orders_from_sap(customer_code, limit=100):
+    """Fetch customer sales orders from SAP B1 with pagination support"""
+    try:
+        cache_key = f"orders_{customer_code}_{limit}"
+        cached_data = get_cached_data(cache_key)
+        if cached_data is not None:
+            frappe.logger().info(f"[SAP] Returning cached orders: {len(cached_data)} records")
+            return cached_data
         
-        frappe.logger().info(f"Total orders processed: {len(orders)}")
+        frappe.logger().info(f"[SAP] Fetching orders for customer: {customer_code} with limit: {limit}")
+        
+        all_orders = []
+        skip = 0
+        batch_size = 20  # SAP B1 default limit
+        max_batches = (limit // batch_size) + 1  # Prevent infinite loops
+        
+        for batch_num in range(max_batches):
+            params = {
+                '$filter': f"CardCode eq '{customer_code}'",
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus',
+                '$orderby': 'DocDate desc',
+                '$top': batch_size,
+                '$skip': skip
+            }
+            
+            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Orders params: {params}")
+            data = fetch_sap_data_with_session('Orders', params, None)
+            
+            if isinstance(data, dict) and 'value' in data:
+                batch_data = data['value'] or []
+            elif isinstance(data, list):
+                batch_data = data
+            else:
+                batch_data = []
+            
+            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Raw response: {len(batch_data)} records")
+            
+            if not batch_data:
+                frappe.logger().info(f"[SAP] No more data in batch {batch_num + 1}, stopping pagination")
+                break
+            
+            # Process batch data
+            for order in batch_data:
+                sap_status = order.get('DocumentStatus')
+                status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
+                
+                order_data = {
+                    'name': str(order.get('DocNum', '')),
+                    'sap_doc_entry': order.get('DocEntry'),
+                    'customer': str(order.get('CardCode', '')),
+                    'customer_name': order.get('CardName', ''),
+                    'transaction_date': order.get('DocDate'),
+                    'grand_total': order.get('DocTotal', 0),
+                    'currency': order.get('DocCurrency', ''),
+                    'status': status
+                }
+                all_orders.append(order_data)
+            
+            # Check if we've reached the desired limit
+            if len(all_orders) >= limit:
+                frappe.logger().info(f"[SAP] Reached limit of {limit}, stopping pagination")
+                break
+            
+            # Check if we got fewer records than batch_size (end of data)
+            if len(batch_data) < batch_size:
+                frappe.logger().info(f"[SAP] Got {len(batch_data)} records (less than batch size {batch_size}), end of data")
+                break
+            
+            skip += batch_size
+        
+        # Limit to requested amount
+        all_orders = all_orders[:limit]
         
         # Cache the result
-        set_cached_data(cache_key, orders)
-        return orders
-    else:
-        frappe.logger().warning(f"No data returned from SAP for customer {customer_code}")
+        set_cached_data(cache_key, all_orders)
+        frappe.logger().info(f"[SAP] Processed {len(all_orders)} orders for customer {customer_code}")
+        return all_orders
     
-    return []
+    except Exception as e:
+        frappe.logger().error(f"Error fetching orders from SAP: {str(e)}")
+        return []
 
 def get_customer_order_detail_from_sap(customer_code, doc_num):
     """Fetch a single sales order with items from SAP B1 by DocNum using $expand (single call with fallback)."""
@@ -433,92 +448,84 @@ def get_customer_order_detail_from_sap(customer_code, doc_num):
         frappe.logger().error(f"Error fetching SAP order detail: {str(e)}")
         return None
 
-def get_customer_delivery_notes_from_sap(customer_code, limit=50):
-    """Fetch customer delivery notes directly from SAP B1"""
-    cache_key = get_cache_key(customer_code, f'delivery_notes_{limit}')
-    
-    # Check cache first
-    cached_data = get_cached_data(cache_key)
-    if cached_data:
-        return cached_data
-    
-    # Fetch from SAP
-    params = {
-        '$select': 'DocNum,DocEntry,CardCode,DocDate,DocTotal,DocCurrency,DocumentStatus',
-        '$filter': f"CardCode eq '{customer_code}'",
-        '$orderby': 'DocDate desc',
-        '$top': limit
-    }
-    
-    data = fetch_sap_data_with_session('DeliveryNotes', params, customer_code)
-    
-    if data:
-        delivery_notes = []
-        for dn in data:
-            dn_data = {
-                'name': dn.get('DocNum'),
-                'sap_doc_entry': dn.get('DocEntry'),
-                'customer': dn.get('CardCode'),
-                'posting_date': dn.get('DocDate'),
-                'grand_total': dn.get('DocTotal', 0),
-                'currency': dn.get('DocCurrency'),
-                'status': dn.get('DocumentStatus')
-            }
-            delivery_notes.append(dn_data)
-        
-        # Cache the result
-        set_cached_data(cache_key, delivery_notes)
-        return delivery_notes
-    
-    return []
-
 def get_customer_delivery_notes_from_sap(customer_code, limit=100):
-    """Fetch customer delivery notes from SAP B1"""
+    """Fetch customer delivery notes from SAP B1 with pagination support"""
     try:
         cache_key = f"delivery_notes_{customer_code}_{limit}"
         cached_data = get_cached_data(cache_key)
         if cached_data is not None:
+            frappe.logger().info(f"[SAP] Returning cached delivery notes: {len(cached_data)} records")
             return cached_data
         
-        frappe.logger().info(f"[SAP] Fetching delivery notes for customer: {customer_code}")
+        frappe.logger().info(f"[SAP] Fetching delivery notes for customer: {customer_code} with limit: {limit}")
         
-        params = {
-            '$filter': f"CardCode eq '{customer_code}'",
-            '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments',
-            '$orderby': 'DocDate desc',
-            '$top': limit
-        }
+        all_delivery_notes = []
+        skip = 0
+        batch_size = 20  # SAP B1 default limit
+        max_batches = (limit // batch_size) + 1  # Prevent infinite loops
         
-        data = fetch_sap_data_with_session('DeliveryNotes', params, None)
-        
-        if isinstance(data, dict) and 'value' in data:
-            delivery_notes_data = data['value'] or []
-        elif isinstance(data, list):
-            delivery_notes_data = data
-        else:
-            delivery_notes_data = []
-        
-        delivery_notes = []
-        for dn in delivery_notes_data:
-            sap_status = dn.get('DocumentStatus')
-            status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
-            
-            dn_data = {
-                'name': str(dn.get('DocNum', '')),
-                'sap_doc_entry': dn.get('DocEntry'),
-                'customer': str(dn.get('CardCode', '')),
-                'customer_name': dn.get('CardName', ''),
-                'posting_date': dn.get('DocDate'),
-                'grand_total': dn.get('DocTotal', 0),
-                'currency': dn.get('DocCurrency', ''),
-                'status': status,
-                'comments': dn.get('Comments', '')
+        for batch_num in range(max_batches):
+            params = {
+                '$filter': f"CardCode eq '{customer_code}'",
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments',
+                '$orderby': 'DocDate desc',
+                '$top': batch_size,
+                '$skip': skip
             }
-            delivery_notes.append(dn_data)
+            
+            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Delivery notes params: {params}")
+            data = fetch_sap_data_with_session('DeliveryNotes', params, None)
+            
+            if isinstance(data, dict) and 'value' in data:
+                batch_data = data['value'] or []
+            elif isinstance(data, list):
+                batch_data = data
+            else:
+                batch_data = []
+            
+            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Raw response: {len(batch_data)} records")
+            
+            if not batch_data:
+                frappe.logger().info(f"[SAP] No more data in batch {batch_num + 1}, stopping pagination")
+                break
+            
+            # Process batch data
+            for dn in batch_data:
+                sap_status = dn.get('DocumentStatus')
+                status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
+                
+                dn_data = {
+                    'name': str(dn.get('DocNum', '')),
+                    'sap_doc_entry': dn.get('DocEntry'),
+                    'customer': str(dn.get('CardCode', '')),
+                    'customer_name': dn.get('CardName', ''),
+                    'posting_date': dn.get('DocDate'),
+                    'grand_total': dn.get('DocTotal', 0),
+                    'currency': dn.get('DocCurrency', ''),
+                    'status': status,
+                    'comments': dn.get('Comments', '')
+                }
+                all_delivery_notes.append(dn_data)
+            
+            # Check if we've reached the desired limit
+            if len(all_delivery_notes) >= limit:
+                frappe.logger().info(f"[SAP] Reached limit of {limit}, stopping pagination")
+                break
+            
+            # Check if we got fewer records than batch_size (end of data)
+            if len(batch_data) < batch_size:
+                frappe.logger().info(f"[SAP] Got {len(batch_data)} records (less than batch size {batch_size}), end of data")
+                break
+            
+            skip += batch_size
+        
+        # Limit to requested amount
+        all_delivery_notes = all_delivery_notes[:limit]
         
         # Cache the result
-        set_cached_data(cache_key, delivery_notes)
-        return delivery_notes
+        set_cached_data(cache_key, all_delivery_notes)
+        frappe.logger().info(f"[SAP] Processed {len(all_delivery_notes)} delivery notes for customer {customer_code}")
+        return all_delivery_notes
     
     except Exception as e:
         frappe.logger().error(f"Error fetching delivery notes from SAP: {str(e)}")
@@ -586,60 +593,91 @@ def get_customer_delivery_note_detail_from_sap(customer_code, doc_num):
         return None
 
 def get_customer_invoices_from_sap(customer_code, limit=100):
-    """Fetch customer invoices from SAP B1"""
+    """Fetch customer invoices from SAP B1 with pagination support"""
     try:
         cache_key = f"invoices_{customer_code}_{limit}"
         cached_data = get_cached_data(cache_key)
         if cached_data is not None:
+            frappe.logger().info(f"[SAP] Returning cached invoices: {len(cached_data)} records")
             return cached_data
         
-        frappe.logger().info(f"[SAP] Fetching invoices for customer: {customer_code}")
+        frappe.logger().info(f"[SAP] Fetching invoices for customer: {customer_code} with limit: {limit}")
         
-        params = {
-            '$filter': f"CardCode eq '{customer_code}'",
-            '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate',
-            '$orderby': 'DocDate desc',
-            '$top': limit
-        }
+        all_invoices = []
+        skip = 0
+        batch_size = 20  # SAP B1 default limit
+        max_batches = (limit // batch_size) + 1  # Prevent infinite loops
         
-        data = fetch_sap_data_with_session('Invoices', params, None)
-        
-        if isinstance(data, dict) and 'value' in data:
-            invoices_data = data['value'] or []
-        elif isinstance(data, list):
-            invoices_data = data
-        else:
-            invoices_data = []
-        
-        invoices = []
-        for inv in invoices_data:
-            sap_status = inv.get('DocumentStatus')
-            status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
-            
-            # Calculate outstanding amount
-            grand_total = inv.get('DocTotal', 0)
-            paid_amount = inv.get('PaidToDate', 0)
-            outstanding_amount = grand_total - paid_amount
-            
-            inv_data = {
-                'name': str(inv.get('DocNum', '')),
-                'sap_doc_entry': inv.get('DocEntry'),
-                'customer': str(inv.get('CardCode', '')),
-                'customer_name': inv.get('CardName', ''),
-                'posting_date': inv.get('DocDate'),
-                'due_date': inv.get('DocDueDate'),
-                'grand_total': grand_total,
-                'outstanding_amount': outstanding_amount,
-                'paid_amount': paid_amount,
-                'currency': inv.get('DocCurrency', ''),
-                'status': status,
-                'comments': inv.get('Comments', '')
+        for batch_num in range(max_batches):
+            params = {
+                '$filter': f"CardCode eq '{customer_code}'",
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate',
+                '$orderby': 'DocDate desc',
+                '$top': batch_size,
+                '$skip': skip
             }
-            invoices.append(inv_data)
+            
+            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Invoices params: {params}")
+            data = fetch_sap_data_with_session('Invoices', params, None)
+            
+            if isinstance(data, dict) and 'value' in data:
+                batch_data = data['value'] or []
+            elif isinstance(data, list):
+                batch_data = data
+            else:
+                batch_data = []
+            
+            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Raw response: {len(batch_data)} records")
+            
+            if not batch_data:
+                frappe.logger().info(f"[SAP] No more data in batch {batch_num + 1}, stopping pagination")
+                break
+            
+            # Process batch data
+            for inv in batch_data:
+                sap_status = inv.get('DocumentStatus')
+                status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
+                
+                # Calculate outstanding amount
+                grand_total = inv.get('DocTotal', 0)
+                paid_amount = inv.get('PaidToDate', 0)
+                outstanding_amount = grand_total - paid_amount
+                
+                inv_data = {
+                    'name': str(inv.get('DocNum', '')),
+                    'sap_doc_entry': inv.get('DocEntry'),
+                    'customer': str(inv.get('CardCode', '')),
+                    'customer_name': inv.get('CardName', ''),
+                    'posting_date': inv.get('DocDate'),
+                    'due_date': inv.get('DocDueDate'),
+                    'grand_total': grand_total,
+                    'outstanding_amount': outstanding_amount,
+                    'paid_amount': paid_amount,
+                    'currency': inv.get('DocCurrency', ''),
+                    'status': status,
+                    'comments': inv.get('Comments', '')
+                }
+                all_invoices.append(inv_data)
+            
+            # Check if we've reached the desired limit
+            if len(all_invoices) >= limit:
+                frappe.logger().info(f"[SAP] Reached limit of {limit}, stopping pagination")
+                break
+            
+            # Check if we got fewer records than batch_size (end of data)
+            if len(batch_data) < batch_size:
+                frappe.logger().info(f"[SAP] Got {len(batch_data)} records (less than batch size {batch_size}), end of data")
+                break
+            
+            skip += batch_size
+        
+        # Limit to requested amount
+        all_invoices = all_invoices[:limit]
         
         # Cache the result
-        set_cached_data(cache_key, invoices)
-        return invoices
+        set_cached_data(cache_key, all_invoices)
+        frappe.logger().info(f"[SAP] Processed {len(all_invoices)} invoices for customer {customer_code}")
+        return all_invoices
     
     except Exception as e:
         frappe.logger().error(f"Error fetching invoices from SAP: {str(e)}")

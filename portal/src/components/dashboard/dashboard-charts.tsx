@@ -319,28 +319,15 @@ export function DashboardCharts({
     "items", // Explicitly include items field for Purchase History chart
   ];
 
-  // Use the centralized useApi hook to fetch data with improved options
-  const {
-    data: orders = [],
-    isLoading: ordersLoading,
-    isError: ordersError,
-    refetch: refetchOrders,
-  } = useApi("Sales Order", salesOrderFields, {
-    staleTime: 30000, // 30 seconds
-    refetchOnMount: true,
-    retry: 2,
-  });
-
-  const {
-    data: invoices = [],
-    isLoading: invoicesLoading,
-    isError: invoicesError,
-    refetch: refetchInvoices,
-  } = useApi("Sales Invoice", salesInvoiceFields, {
-    staleTime: 30000,
-    refetchOnMount: true,
-    retry: 2,
-  });
+  // Use SAP data from dashboard instead of ERPNext
+  const orders = salesStats || []; // Use sales stats data for orders
+  const invoices: any[] = []; // No invoice data from SAP in charts for now
+  
+  // Set loading and error states
+  const ordersLoading = salesStatsLoading;
+  const invoicesLoading = false; // No invoice data loading
+  const ordersError = salesStatsError;
+  const invoicesError = null; // No invoice data errors
 
   // Loading and error states
   const chartsLoading = {

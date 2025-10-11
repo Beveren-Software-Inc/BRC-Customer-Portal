@@ -170,50 +170,29 @@ export default function Dashboard() {
     retry: 2,
   });
 
-  // Use the centralized useApi hook to fetch data with improved options
-  const {
-    data: salesOrders = [],
-    isLoading: ordersLoading,
-    isError: ordersError,
-    refetch: refetchOrders,
-  } = useApi("Sales Order", salesOrderFields, {
-    staleTime: 30000, // 30 seconds
-    refetchOnMount: true,
-    retry: 2,
-  });
-
-  const {
-    data: invoices = [],
-    isLoading: invoicesLoading,
-    isError: invoicesError,
-    refetch: refetchInvoices,
-  } = useApi("Sales Invoice", salesInvoiceFields, {
-    staleTime: 30000,
-    refetchOnMount: true,
-    retry: 2,
-  });
-
-  const {
-    data: quotations = [],
-    isLoading: quotationsLoading,
-    isError: quotationsError,
-    refetch: refetchQuotations,
-  } = useApi("Quotation", quotationFields, {
-    staleTime: 30000,
-    refetchOnMount: true,
-    retry: 2,
-  });
-
-  const {
-    data: deliveryNotes = [],
-    isLoading: deliveriesLoading,
-    isError: deliveriesError,
-    refetch: refetchDeliveries,
-  } = useApi("Delivery Note", deliveryNoteFields, {
-    staleTime: 30000,
-    refetchOnMount: true,
-    retry: 2,
-  });
+  // Extract SAP data from dashboard data
+  const salesOrders = sapDashboardData?.orders || [];
+  const invoices = sapDashboardData?.invoices || [];
+  const deliveryNotes = sapDashboardData?.delivery_notes || [];
+  const quotations = []; // SAP doesn't provide quotations in dashboard data
+  
+  // Set loading states based on SAP data loading
+  const ordersLoading = sapDataLoading;
+  const invoicesLoading = sapDataLoading;
+  const deliveriesLoading = sapDataLoading;
+  const quotationsLoading = false; // No quotations from SAP
+  
+  // Set error states based on SAP data errors
+  const ordersError = sapDataError;
+  const invoicesError = sapDataError;
+  const deliveriesError = sapDataError;
+  const quotationsError = false; // No quotations from SAP
+  
+  // Refetch functions
+  const refetchOrders = refetchSapData;
+  const refetchInvoices = refetchSapData;
+  const refetchDeliveries = refetchSapData;
+  const refetchQuotations = () => Promise.resolve(); // No quotations to refetch
 
   // Determine overall loading state
   const loading =
@@ -364,13 +343,13 @@ export default function Dashboard() {
       
       if (processedData.summary) {
         // Use SAP summary data
-        undeliveredOrders = [];
-        unpaidInvoices = [];
+        undeliveredOrders = processedData.summary.undelivered_orders || 0;
+        unpaidInvoices = processedData.summary.unpaid_invoices || 0;
         unpaidInvoicesTotal = processedData.summary.unpaid_total || 0;
-        unbilledDeliveries = [];
-        unbilledDeliveriesTotal = 0;
+        unbilledDeliveries = processedData.summary.unbilled_deliveries || 0;
+        unbilledDeliveriesTotal = processedData.summary.unbilled_total || 0;
       } else {
-        // Process ERPNext data
+        // Process ERPNext data (fallback)
         undeliveredOrders = processedData.salesOrders.filter(
           (order) => order.status === "To Deliver and Bill"
         );
@@ -467,8 +446,8 @@ export default function Dashboard() {
       const summary = [
         {
           title: "Undelivered Orders",
-          value: undeliveredOrders.length,
-          count: undeliveredOrders.length.toString(),
+          value: typeof undeliveredOrders === 'number' ? undeliveredOrders : undeliveredOrders.length,
+          count: typeof undeliveredOrders === 'number' ? undeliveredOrders.toString() : undeliveredOrders.length.toString(),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
           color: "bg-amber-100 dark:bg-amber-900",
           textColor: "text-amber-800 dark:text-amber-300",
@@ -476,7 +455,7 @@ export default function Dashboard() {
         {
           title: "Unbilled Deliveries",
           value: unbilledDeliveriesTotal,
-          count: unbilledDeliveries.length.toString(),
+          count: typeof unbilledDeliveries === 'number' ? unbilledDeliveries.toString() : unbilledDeliveries.length.toString(),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
           color: "bg-blue-100 dark:bg-blue-900",
           textColor: "text-blue-800 dark:text-blue-300",
@@ -485,7 +464,7 @@ export default function Dashboard() {
         {
           title: "Unpaid Invoices",
           value: unpaidInvoicesTotal,
-          count: unpaidInvoices.length.toString(),
+          count: typeof unpaidInvoices === 'number' ? unpaidInvoices.toString() : unpaidInvoices.length.toString(),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
           color: "bg-red-100 dark:bg-red-900",
           textColor: "text-red-800 dark:text-red-300",
@@ -606,13 +585,13 @@ export default function Dashboard() {
           let onClick: (() => void) | undefined = undefined;
           let clickable = false;
           if (item.title === "Undelivered Orders") {
-            onClick = () => navigate("/sales-orders", { state: { initialStatus: ["to deliver and bill", "to deliver"] } });
+            onClick = () => navigate("/sales-orders", { state: { initialStatus: ["open"] } });
             clickable = true;
           } else if (item.title === "Unbilled Deliveries") {
-            onClick = () => navigate("/delivery-notes", { state: { initialStatus: ["to bill"] } });
+            onClick = () => navigate("/delivery-notes", { state: { initialStatus: ["open"] } });
             clickable = true;
           } else if (item.title === "Unpaid Invoices") {
-            onClick = () => navigate("/sales-invoices", { state: { initialStatus: ["Unpaid", "Overdue", "Partly Paid"] } });
+            onClick = () => navigate("/sales-invoices", { state: { initialStatus: ["open"] } });
             clickable = true;
           }
           return (

@@ -4,6 +4,31 @@ from customer_portal import sap_api_utils
 
 
 @frappe.whitelist()
+def clear_customer_cache():
+    """Clear all cached data for the current customer"""
+    try:
+        customer_code = sap_api_utils.get_customer_code_from_user()
+        if not customer_code:
+            return {
+                "error": True,
+                "message": "No customer code found for current user"
+            }
+        
+        success = sap_api_utils.clear_cache_for_customer(customer_code)
+        
+        return {
+            "success": success,
+            "message": f"Cache cleared for customer {customer_code}" if success else "Failed to clear cache"
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error clearing customer cache: {str(e)}", "Customer Portal")
+        return {
+            "error": True,
+            "message": f"Error clearing cache: {str(e)}"
+        }
+
+@frappe.whitelist()
 def get_customer_balance():
     """Get customer balance directly from SAP B1"""
     try:
@@ -49,32 +74,6 @@ def get_customer_balance():
         return {
             "error": True,
             "message": f"Error fetching customer balance: {str(e)}"
-        }
-
-@frappe.whitelist()
-def get_customer_invoices():
-    """Get customer invoices directly from SAP B1"""
-    try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
-        
-        # Fetch invoices from SAP
-        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=100)
-        
-        return {
-            "success": True,
-            "data": invoices
-        }
-        
-    except Exception as e:
-        frappe.log_error(f"Error fetching customer invoices: {str(e)}", "Customer Portal")
-        return {
-            "error": True,
-            "message": f"Error fetching customer invoices: {str(e)}"
         }
 
 @frappe.whitelist()
@@ -142,17 +141,19 @@ def get_customer_dashboard_data():
         
         # Fetch all data from SAP
         balance_data = sap_api_utils.get_customer_balance_from_sap(customer_code)
-        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=50)
-        orders = sap_api_utils.get_customer_orders_from_sap(customer_code, limit=50)
-        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=50)
+        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=200)
+        orders = sap_api_utils.get_customer_orders_from_sap(customer_code, limit=200)
+        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=200)
+        
+        frappe.logger().info(f"[Dashboard] Fetched {len(delivery_notes)} delivery notes for customer {customer_code}")
         
         # Calculate summary statistics
         total_invoices = len(invoices)
         total_orders = len(orders)
         total_delivery_notes = len(delivery_notes)
         
-        # Calculate unpaid invoices total
-        unpaid_invoices = [inv for inv in invoices if inv.get('status') in ['bost_Open', 'O']]
+        # Calculate unpaid invoices total (Open invoices from SAP)
+        unpaid_invoices = [inv for inv in invoices if inv.get('status') == 'Open']
         unpaid_total = sum(inv.get('outstanding_amount', 0) for inv in unpaid_invoices)
         
         # Calculate overdue invoices
@@ -160,6 +161,15 @@ def get_customer_dashboard_data():
         overdue_invoices = [inv for inv in unpaid_invoices 
                            if inv.get('due_date') and getdate(inv.get('due_date')) < today_date]
         overdue_total = sum(inv.get('outstanding_amount', 0) for inv in overdue_invoices)
+        
+        # Calculate undelivered orders (Open sales orders from SAP)
+        undelivered_orders = [order for order in orders if order.get('status') == 'Open']
+        undelivered_count = len(undelivered_orders)
+        
+        # Calculate unbilled deliveries (Open delivery notes from SAP)
+        unbilled_deliveries = [dn for dn in delivery_notes if dn.get('status') == 'Open']
+        unbilled_count = len(unbilled_deliveries)
+        unbilled_total = sum(dn.get('grand_total', 0) for dn in unbilled_deliveries)
         
         return {
             "success": True,
@@ -176,6 +186,9 @@ def get_customer_dashboard_data():
                     "unpaid_total": unpaid_total,
                     "overdue_invoices": len(overdue_invoices),
                     "overdue_total": overdue_total,
+                    "undelivered_orders": undelivered_count,
+                    "unbilled_deliveries": unbilled_count,
+                    "unbilled_total": unbilled_total,
                     "current_balance": balance_data.get('current_balance', 0) if balance_data else 0,
                     "credit_limit": balance_data.get('credit_limit', 0) if balance_data else 0
                 }
