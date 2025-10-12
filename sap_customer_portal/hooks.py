@@ -1,7 +1,7 @@
-app_name = "customer_portal"
-app_title = "Beveren Customer Portal"
-app_publisher = "Beveren Software Inc"
-app_description = "Beveren Custom ERPNext Customer Portal"
+app_name = "sap_customer_portal"
+app_title = "SAP Customer Portal"
+app_publisher = "SAP Software Inc"
+app_description = "SAP Customer Portal for ERPNext"
 app_email = "simon@beverensoftware.com"
 app_license = "mit"
 
@@ -17,9 +17,9 @@ _logo_path = _get_logo_path()
 
 add_to_apps_screen = [
 	{
-		"name": "customer_portal",
+		"name": "sap_customer_portal",
 		"logo": _logo_path,
-		"title": "Customer Portal",
+		"title": "SAP Customer Portal",
 		"route": "/portal"
 	}
 ]
@@ -28,15 +28,15 @@ add_to_apps_screen = [
 # ------------------
 
 # include js, css files in header of desk.html
-# app_include_css = "/assets/customer_portal/css/customer_portal.css"
-# app_include_js = "/assets/customer_portal/js/customer_portal.js"
+# app_include_css = "/assets/sap_customer_portal/css/sap_customer_portal.css"
+# app_include_js = "/assets/sap_customer_portal/js/sap_customer_portal.js"
 
 # include js, css files in header of web template
-# web_include_css = "/assets/customer_portal/css/customer_portal.css"
-# web_include_js = "/assets/customer_portal/js/customer_portal.js"
+# web_include_css = "/assets/sap_customer_portal/css/sap_customer_portal.css"
+# web_include_js = "/assets/sap_customer_portal/js/sap_customer_portal.js"
 
 # include custom scss in every website theme (without file extension ".scss")
-# website_theme_scss = "customer_portal/public/scss/website"
+# website_theme_scss = "sap_customer_portal/public/scss/website"
 
 # include js, css files in header of web form
 # webform_include_js = {"doctype": "public/js/doctype.js"}
@@ -54,7 +54,7 @@ add_to_apps_screen = [
 # Svg Icons
 # ------------------
 # include app icons in desk
-# app_include_icons = "customer_portal/public/icons.svg"
+# app_include_icons = "sap_customer_portal/public/icons.svg"
 
 # Home Pages
 # ----------
@@ -78,25 +78,25 @@ role_home_page = {
 
 # add methods and filters to jinja environment
 # jinja = {
-# 	"methods": "customer_portal.utils.jinja_methods",
-# 	"filters": "customer_portal.utils.jinja_filters"
+# 	"methods": "sap_customer_portal.utils.jinja_methods",
+# 	"filters": "sap_customer_portal.utils.jinja_filters"
 # }
 
 # Installation
 # ------------
 
-# before_install = "customer_portal.install.before_install"
+# before_install = "sap_customer_portal.install.before_install"
 after_install = [
-    "customer_portal.customization.customer_role_perms.create_customer_role_permissions",
+    "sap_customer_portal.customization.customer_role_perms.create_customer_role_permissions",
 ]
 
 
 # Uninstallation
 # ------------
 
-# before_uninstall = "customer_portal.uninstall.before_uninstall"
+# before_uninstall = "sap_customer_portal.uninstall.before_uninstall"
 after_uninstall = [
-    "customer_portal.customization.customer_role_perms.delete_customer_role_permissions",
+    "sap_customer_portal.customization.customer_role_perms.delete_customer_role_permissions",
 ]
 
 
@@ -105,41 +105,41 @@ after_uninstall = [
 # To set up dependencies/integrations with other apps
 # Name of the app being installed is passed as an argument
 
-# before_app_install = "customer_portal.utils.before_app_install"
-# after_app_install = "customer_portal.utils.after_app_install"
+# before_app_install = "sap_customer_portal.utils.before_app_install"
+# after_app_install = "sap_customer_portal.utils.after_app_install"
 
 # Integration Cleanup
 # -------------------
 # To clean up dependencies/integrations with other apps
 # Name of the app being uninstalled is passed as an argument
 
-# before_app_uninstall = "customer_portal.utils.before_app_uninstall"
-# after_app_uninstall = "customer_portal.utils.after_app_uninstall"
+# before_app_uninstall = "sap_customer_portal.utils.before_app_uninstall"
+# after_app_uninstall = "sap_customer_portal.utils.after_app_uninstall"
 
 # Desk Notifications
 # ------------------
 # See frappe.core.notifications.get_notification_config
 
-# notification_config = "customer_portal.notifications.get_notification_config"
+# notification_config = "sap_customer_portal.notifications.get_notification_config"
 
 # Permissions
 # -----------
 # Permissions evaluated in scripted ways
 
 # permission_query_conditions = {
-#     "Customer": "customer_portal.permissions.customer_query_conditions",
-#     "Sales Invoice": "customer_portal.permissions.customer_user_query_conditions",
-#     "Sales Order": "customer_portal.permissions.customer_user_query_conditions",
-#     "Delivery Note": "customer_portal.permissions.customer_user_query_conditions",
-#     "Quotation": "customer_portal.permissions.customer_user_query_conditions",
+#     "Customer": "sap_customer_portal.permissions.customer_query_conditions",
+#     "Sales Invoice": "sap_customer_portal.permissions.customer_user_query_conditions",
+#     "Sales Order": "sap_customer_portal.permissions.customer_user_query_conditions",
+#     "Delivery Note": "sap_customer_portal.permissions.customer_user_query_conditions",
+#     "Quotation": "sap_customer_portal.permissions.customer_user_query_conditions",
 # }
 
 has_permission = {
-    "Customer": "customer_portal.permissions.customer_has_permission",
-    "Sales Invoice": "customer_portal.permissions.customer_user_has_permission",
-    "Sales Order": "customer_portal.permissions.customer_user_has_permission",
-    "Delivery Note": "customer_portal.permissions.customer_user_has_permission",
-    "Quotation": "customer_portal.permissions.customer_user_has_permission",
+    "Customer": "sap_customer_portal.permissions.customer_has_permission",
+    "Sales Invoice": "sap_customer_portal.permissions.customer_user_has_permission",
+    "Sales Order": "sap_customer_portal.permissions.customer_user_has_permission",
+    "Delivery Note": "sap_customer_portal.permissions.customer_user_has_permission",
+    "Quotation": "sap_customer_portal.permissions.customer_user_has_permission",
 }
 
 # DocType Class
@@ -165,14 +165,14 @@ has_permission = {
 doc_events = {
     "Customer": {
         "after_insert": [
-            "customer_portal.customization.customer_user_perms.create_customer_user_permissions",
+            "sap_customer_portal.customization.customer_user_perms.create_customer_user_permissions",
         ],
         "on_update": [
-            "customer_portal.customization.customer_user_perms.create_customer_user_permissions",
-            "customer_portal.customization.customer_user_perms.delete_customer_user_permissions",
+            "sap_customer_portal.customization.customer_user_perms.create_customer_user_permissions",
+            "sap_customer_portal.customization.customer_user_perms.delete_customer_user_permissions",
         ],
         "on_trash": [
-            "customer_portal.customization.customer_user_perms.delete_customer_user_permissions",
+            "sap_customer_portal.customization.customer_user_perms.delete_customer_user_permissions",
         ]
     },
 }
@@ -182,39 +182,39 @@ doc_events = {
 
 # scheduler_events = {
 # 	"all": [
-# 		"customer_portal.tasks.all"
+# 		"sap_customer_portal.tasks.all"
 # 	],
 # 	"daily": [
-# 		"customer_portal.tasks.daily"
+# 		"sap_customer_portal.tasks.daily"
 # 	],
 # 	"hourly": [
-# 		"customer_portal.tasks.hourly"
+# 		"sap_customer_portal.tasks.hourly"
 # 	],
 # 	"weekly": [
-# 		"customer_portal.tasks.weekly"
+# 		"sap_customer_portal.tasks.weekly"
 # 	],
 # 	"monthly": [
-# 		"customer_portal.tasks.monthly"
+# 		"sap_customer_portal.tasks.monthly"
 # 	],
 # }
 
 # Testing
 # -------
 
-# before_tests = "customer_portal.install.before_tests"
+# before_tests = "sap_customer_portal.install.before_tests"
 
 # Overriding Methods
 # ------------------------------
 #
 # override_whitelisted_methods = {
-# 	"frappe.desk.doctype.event.event.get_events": "customer_portal.event.get_events"
+# 	"frappe.desk.doctype.event.event.get_events": "sap_customer_portal.event.get_events"
 # }
 #
 # each overriding function accepts a `data` argument;
 # generated from the base implementation of the doctype dashboard,
 # along with any modifications made in other Frappe apps
 # override_doctype_dashboards = {
-# 	"Task": "customer_portal.task.get_dashboard_data"
+# 	"Task": "sap_customer_portal.task.get_dashboard_data"
 # }
 
 # exempt linked doctypes from being automatically cancelled
@@ -228,14 +228,14 @@ doc_events = {
 
 # Request Events
 # ----------------
-# before_request = ["customer_portal.utils.before_request"]
-# after_request = ["customer_portal.utils.after_request"]
+# before_request = ["sap_customer_portal.utils.before_request"]
+# after_request = ["sap_customer_portal.utils.after_request"]
 
 
 # Job Events
 # ----------
-# before_job = ["customer_portal.utils.before_job"]
-# after_job = ["customer_portal.utils.after_job"]
+# before_job = ["sap_customer_portal.utils.before_job"]
+# after_job = ["sap_customer_portal.utils.after_job"]
 
 # User Data Protection
 # --------------------
@@ -265,7 +265,7 @@ doc_events = {
 # --------------------------------
 
 # auth_hooks = [
-# 	"customer_portal.auth.validate"
+# 	"sap_customer_portal.auth.validate"
 # ]
 
 # Automatically update python controller files with type annotations for this app.

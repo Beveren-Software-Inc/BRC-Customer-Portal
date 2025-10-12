@@ -10,9 +10,9 @@ def _get_logo_path():
         if assets_dir.exists():
             for file in sorted(os.listdir(assets_dir)):
                 if "logo" in file.lower():
-                    return f"/assets/customer_portal/portal/assets/{file}"
+                    return f"/assets/sap_customer_portal/portal/assets/{file}"
     except Exception:    
-        return "/assets/customer_portal/portal/assets/logo-DRmS0mf5.jpg"
+        return "/assets/sap_customer_portal/portal/assets/logo-DRmS0mf5.jpg"
 
 def get_website_route_rules():
     """

@@ -21,7 +21,7 @@ export function useCustomerAging() {
     const fetchCustomerAging = async () => {
       setLoading(true);
       try {
-        const res = await fetch("/api/method/customer_portal.api.customer_ageing.get_customer_aging");
+        const res = await fetch("/api/method/sap_customer_portal.api.customer_ageing.get_customer_aging");
         if (!res.ok) throw new Error("Failed to fetch customer aging data");
 
         const json = await res.json();

@@ -1,5 +1,5 @@
 import frappe
-from customer_portal import sap_api_utils
+from sap_customer_portal import sap_api_utils
 
 @frappe.whitelist()
 def test_sap_balance():

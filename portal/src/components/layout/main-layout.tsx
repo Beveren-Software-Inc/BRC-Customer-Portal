@@ -115,13 +115,13 @@ export default function MainLayout({ children }: MainLayoutProps) {
                 {sidebarOpen || isMobile ? (
                   <img
                     src={logoUrl || fullLogo}
-                    alt="Beveren Logo"
+                    alt="SAP Logo"
                     className="h-16 w-auto"
                   />
                 ) : (
                   <img
                     src={iconUrl || logoIcon}
-                    alt="Beveren Icon"
+                    alt="SAP Icon"
                     className="h-8 w-8 object-contain"
                   />
                 )}
@@ -211,7 +211,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
               className={`p-4 text-xs text-gray-500 dark:text-gray-400 ${styles.footerContent}`}
             >
               <div className="flex items-center justify-between">
-                <span>© 2025 Beveren Software Inc</span>
+                <span>© 2025 SAP Software Inc</span>
                 <span>v1.0.0</span>
               </div>
             </div>

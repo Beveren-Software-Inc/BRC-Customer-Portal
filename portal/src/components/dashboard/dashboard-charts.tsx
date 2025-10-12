@@ -247,7 +247,7 @@ async function fetchMonthlySalesOrderStats(params: { months: number }) {
     headers['X-Frappe-CSRF-Token'] = csrfToken;
   }
   
-  const res = await fetch("/api/method/customer_portal.utils.get_monthly_sales_order_stats", {
+  const res = await fetch("/api/method/sap_customer_portal.utils.get_monthly_sales_order_stats", {
     method: "POST",
     headers,
     credentials: "include", // Include cookies for authentication

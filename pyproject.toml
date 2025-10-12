@@ -1,9 +1,9 @@
 [project]
-name = "customer_portal"
+name = "sap_customer_portal"
 authors = [
-    { name = "Beveren Software Inc", email = "simon@beverensoftware.com"}
+    { name = "SAP Software Inc", email = "simon@beverensoftware.com"}
 ]
-description = "Beveren Custom ERPNext Customer Portal"
+description = "SAP Customer Portal for ERPNext"
 requires-python = ">=3.10"
 readme = "README.md"
 dynamic = ["version"]

@@ -24,7 +24,7 @@ export default defineConfig({
 		devSourcemap: true,
 	},
 	build: {
-		outDir: '../customer_portal/public/portal',
+		outDir: '../sap_customer_portal/public/portal',
 		emptyOutDir: true,
 		target: 'es2015',
 		chunkSizeWarningLimit: 3000, 
