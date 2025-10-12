@@ -34,7 +34,6 @@ def get_sap_b1_settings():
                 password = settings.password
                 if not password:
                     raise Exception("No password available")
-                frappe.logger().info("Using raw password field (unencrypted)")
             except Exception as raw_error:
                 frappe.logger().error(f"Raw password also failed: {str(raw_error)}")
                 raise Exception(f"Password decryption failed: {str(decrypt_error)[:100]}")
@@ -68,10 +67,7 @@ def login_to_sap_b1(server_url, encoded_credentials, retry_count=0):
     credentials = json.loads(base64.b64decode(encoded_credentials).decode())
     
     try:
-        frappe.logger().info(f"Attempting to login to SAP B1 at: {login_url}")
-        frappe.logger().info(f"Credentials: CompanyDB={credentials.get('CompanyDB')}, UserName={credentials.get('UserName')}")
-        frappe.logger().info(f"Password length: {len(credentials.get('Password', ''))}")
-        
+  
         response = requests.request('POST',
             url=login_url, 
             data=json.dumps(credentials),  
@@ -80,22 +76,14 @@ def login_to_sap_b1(server_url, encoded_credentials, retry_count=0):
             timeout=REQUEST_TIMEOUT
         )
         
-        frappe.logger().info(f"Login response status: {response.status_code}")
-        frappe.logger().info(f"Response headers: {dict(response.headers)}")
-        frappe.logger().info(f"Response cookies: {dict(response.cookies)}")
-        frappe.logger().info(f"Response content: {response.text[:500]}")
-        
+      
         if response.status_code != 200:
-            frappe.logger().error(f"Login failed with status {response.status_code}")
-            frappe.logger().error(f"Response content: {response.text[:500]}")
+            frappe.log_error(f"Login failed with status {response.status_code}")
             response.raise_for_status()
         
         cookies = response.cookies
         session_id = cookies.get('B1SESSION')
         route_id = cookies.get('ROUTEID')
-        
-        frappe.logger().info(f"Session ID: {session_id}")
-        frappe.logger().info(f"Route ID: {route_id}")
         
         if not session_id:
             frappe.log_error("SAP B1 login successful but no session ID received", "Customer Portal SAP Integration")
@@ -106,11 +94,7 @@ def login_to_sap_b1(server_url, encoded_credentials, retry_count=0):
             "route_id": route_id
         }
     except RequestException as e:
-        error_msg = f"SAP B1 login failed: {type(e).__name__}"
-        frappe.logger().error(f"{error_msg}: {str(e)[:100]}")
-        
         if retry_count < MAX_RETRIES:
-            frappe.logger().info(f"Retrying login (attempt {retry_count + 1})")
             time.sleep(RETRY_DELAY * (retry_count + 1))
             return login_to_sap_b1(server_url, encoded_credentials, retry_count + 1)
         
@@ -177,7 +161,7 @@ def clear_cache_for_customer(customer_code):
             try:
                 frappe.cache().delete_keys(pattern)
             except:
-                pass  # Ignore errors for individual key patterns
+                pass
         
         frappe.logger().info(f"Cleared cache for customer: {customer_code}")
         return True
@@ -192,9 +176,7 @@ def fetch_sap_data_with_session(data_document, params=None, customer_code=None):
         if not settings:
             frappe.logger().error("SAP B1 settings not available")
             return None
-        
-        frappe.logger().info(f"Fetching SAP data: {data_document} for customer: {customer_code}")
-        
+                
         # Login directly to get cookies (Postman style)
         credentials = {
             "CompanyDB": settings["companydb"],
@@ -218,12 +200,10 @@ def fetch_sap_data_with_session(data_document, params=None, customer_code=None):
         cookies = login_response.cookies
         session_id = cookies.get('B1SESSION')
         if not session_id:
-            frappe.logger().error("No session ID received from login")
             return None
         
         # Build URL
         url = urljoin(settings["server_url"], data_document)
-        frappe.logger().info(f"SAP URL: {url}")
         
         # Normalize params and avoid duplicating CardCode filter
         normalized_params = dict(params or {})
@@ -234,7 +214,6 @@ def fetch_sap_data_with_session(data_document, params=None, customer_code=None):
                     normalized_params['$filter'] = f"{existing_filter} and CardCode eq '{customer_code}'"
                 else:
                     normalized_params['$filter'] = f"CardCode eq '{customer_code}'"
-        frappe.logger().info(f"SAP request params: {normalized_params}")
         
         # GET with cookies only (no Content-Type header needed)
         response = requests.get(
@@ -244,13 +223,10 @@ def fetch_sap_data_with_session(data_document, params=None, customer_code=None):
             verify=False,
             timeout=REQUEST_TIMEOUT
         )
-        frappe.logger().info(f"SAP response status: {response.status_code}")
         if response.status_code != 200:
-            frappe.logger().error(f"SAP API error: {response.status_code} - {response.text[:500]}")
             return None
         
         data = response.json()
-        frappe.logger().info(f"SAP response data keys: {list(data.keys()) if isinstance(data, dict) else 'Not a dict'}")
         # Return list for collection responses, or raw dict for entity responses
         if isinstance(data, dict):
             return data.get('value', data)
@@ -271,20 +247,15 @@ def get_customer_balance_from_sap(customer_code):
         if cached_data:
             frappe.logger().info(f"Returning cached balance data for {customer_code}")
             return cached_data
-        
-        frappe.logger().info(f"Fetching balance from SAP for customer: {customer_code}")
-        
+
         # Fetch from SAP
         params = {
             '$select': 'CardCode,CardName,CurrentAccountBalance,CreditLimit',
             '$filter': f"CardCode eq '{customer_code}'"
         }
         
-        data = fetch_sap_data_with_session('BusinessPartners', params, None)  # Don't pass customer_code to avoid duplicate filter
-        frappe.logger().info(f"SAP response data: {data}")
-        frappe.logger().info(f"SAP response data type: {type(data)}")
-        frappe.logger().info(f"SAP response data length: {len(data) if data else 'None'}")
-        
+        data = fetch_sap_data_with_session('BusinessPartners', params, None)
+
         if data and len(data) > 0:
             customer_data = data[0]
             balance_info = {
@@ -293,9 +264,7 @@ def get_customer_balance_from_sap(customer_code):
                 'current_balance': customer_data.get('CurrentAccountBalance', 0),
                 'credit_limit': customer_data.get('CreditLimit', 0)
             }
-            
-            frappe.logger().info(f"Balance info created: {balance_info}")
-            
+                        
             # Cache the result
             set_cached_data(cache_key, balance_info)
             return balance_info
@@ -314,15 +283,12 @@ def get_customer_orders_from_sap(customer_code, limit=500):
         cache_key = f"orders_{customer_code}_{limit}"
         cached_data = get_cached_data(cache_key)
         if cached_data is not None:
-            frappe.logger().info(f"[SAP] Returning cached orders: {len(cached_data)} records")
             return cached_data
-        
-        frappe.logger().info(f"[SAP] Fetching orders for customer: {customer_code} with limit: {limit}")
-        
+                
         all_orders = []
         skip = 0
-        batch_size = 20  # SAP B1 default limit
-        max_batches = (limit // batch_size) + 1  # Prevent infinite loops
+        batch_size = 20
+        max_batches = (limit // batch_size) + 1  
         
         for batch_num in range(max_batches):
             params = {
@@ -333,7 +299,6 @@ def get_customer_orders_from_sap(customer_code, limit=500):
                 '$skip': skip
             }
             
-            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Orders params: {params}")
             data = fetch_sap_data_with_session('Orders', params, None)
             
             if isinstance(data, dict) and 'value' in data:
@@ -342,9 +307,7 @@ def get_customer_orders_from_sap(customer_code, limit=500):
                 batch_data = data
             else:
                 batch_data = []
-            
-            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Raw response: {len(batch_data)} records")
-            
+                        
             if not batch_data:
                 frappe.logger().info(f"[SAP] No more data in batch {batch_num + 1}, stopping pagination")
                 break
@@ -373,7 +336,6 @@ def get_customer_orders_from_sap(customer_code, limit=500):
             
             # Check if we got fewer records than batch_size (end of data)
             if len(batch_data) < batch_size:
-                frappe.logger().info(f"[SAP] Got {len(batch_data)} records (less than batch size {batch_size}), end of data")
                 break
             
             skip += batch_size
@@ -383,7 +345,6 @@ def get_customer_orders_from_sap(customer_code, limit=500):
         
         # Cache the result
         set_cached_data(cache_key, all_orders)
-        frappe.logger().info(f"[SAP] Processed {len(all_orders)} orders for customer {customer_code}")
         return all_orders
     
     except Exception as e:
@@ -797,18 +758,14 @@ def get_customer_statement_from_sap(customer_code, from_date, to_date, limit=500
         cache_key = f"customer_statement_{customer_code}_{from_date}_{to_date}_{limit}"
         cached_data = get_cached_data(cache_key)
         if cached_data is not None:
-            frappe.logger().info(f"[SAP] Returning cached customer statement: {len(cached_data.get('transactions', []))} transactions")
             return cached_data
         
-        frappe.logger().info(f"[SAP] Generating customer statement for customer: {customer_code} from {from_date} to {to_date}")
         
         # Step 1: Get all invoices (not just date-filtered ones for proper balance calculation)
         all_invoices = get_customer_invoices_from_sap(customer_code, limit=1000)
-        frappe.logger().info(f"[SAP] Found {len(all_invoices)} total invoices for customer {customer_code}")
         
         # Step 2: Get all payments
         all_payments = get_customer_payments_from_sap(customer_code, limit=1000)
-        frappe.logger().info(f"[SAP] Found {len(all_payments)} total payments for customer {customer_code}")
         
         # Step 3: Create combined transaction list
         transactions = []
@@ -862,16 +819,13 @@ def get_customer_statement_from_sap(customer_code, from_date, to_date, limit=500
         for transaction in transactions:
             transaction_date = transaction['date']
             
-            # Calculate running balance
             running_balance += transaction['debit'] - transaction['credit']
             transaction['balance'] = running_balance
             
-            # Check if transaction is before the from_date (for opening balance)
             if transaction_date and transaction_date < from_date:
                 opening_balance = running_balance
                 continue
             
-            # Check if transaction is within the date range
             if transaction_date and from_date <= transaction_date <= to_date:
                 filtered_transactions.append(transaction)
         
@@ -921,8 +875,6 @@ def get_customer_statement_from_sap(customer_code, from_date, to_date, limit=500
         
         # Cache the result
         set_cached_data(cache_key, statement_data)
-        frappe.logger().info(f"[SAP] Generated customer statement with {len(filtered_transactions)} transactions for customer {customer_code}")
-        frappe.logger().info(f"[SAP] Opening balance: {opening_balance}, Closing balance: {current_balance}")
         return statement_data
         
     except Exception as e:
@@ -944,13 +896,11 @@ def get_customer_invoice_detail_from_sap(customer_code, doc_num):
             if isinstance(data, list):
                 return data
             return []
-        # Try DocNum + CardCode first
+
         invoices = fetch_with_filter(f"DocNum eq {int(doc_num)} and CardCode eq '{customer_code}'")
-        frappe.logger().info(f"[SAP] Invoices with DocNum+CardCode: {len(invoices)}")
         if not invoices:
             # Fallback: DocNum only
             invoices = fetch_with_filter(f"DocNum eq {int(doc_num)}")
-            frappe.logger().info(f"[SAP] Invoices with DocNum only: {len(invoices)}")
         if not invoices:
             return None
         invoice = invoices[0]
@@ -1004,7 +954,6 @@ def get_customer_code_from_user():
     # Check if user is Administrator or has system roles
     roles = frappe.get_roles(current_user)
     if current_user == "Administrator" or "System Manager" in roles:
-        # For admin users, return a default customer code (you might want to make this configurable)
         return "CF342"  # Default customer code as mentioned in the request
     
     # For portal users, get their linked customer

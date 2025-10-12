@@ -72,7 +72,7 @@ export default function DeliveryNotesList() {
   const handleRefresh = async () => {
     try {
       // Clear cache first to ensure fresh SAP data
-      await fetch('/api/method/customer_portal.api.customer_balance.clear_customer_cache');
+      await fetch('/api/method/sap_customer_portal.api.customer_balance.clear_customer_cache');
       console.log("Cache cleared successfully");
       
       // Refetch data

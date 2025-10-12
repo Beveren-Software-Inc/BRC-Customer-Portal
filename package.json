@@ -1,7 +1,7 @@
 {
-  "name": "customer_portal",
+  "name": "sap_customer_portal",
   "version": "1.0.0",
-  "description": "Beveren Custom ERPNext Customer Portal",
+  "description": "SAP Custom ERPNext Customer Portal",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",

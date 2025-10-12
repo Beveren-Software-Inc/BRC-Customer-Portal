@@ -1,7 +1,7 @@
 import frappe
 from frappe import _
 from frappe.utils import getdate
-from customer_portal.api.customer_statement import (
+from sap_customer_portal.api.customer_statement import (
     get_customer_statement_data, 
     get_customer_company, 
     validate_customer_access,
@@ -83,7 +83,7 @@ def get_customer_statement_pdf_preview(customer=None, from_date=None, to_date=No
 
 
 def generate_print_preview_html(data):
-    from customer_portal.utils import _get_logo_path
+    from sap_customer_portal.utils import _get_logo_path
     _logo_path = _get_logo_path()
     """
     Generate HTML content optimized for print preview

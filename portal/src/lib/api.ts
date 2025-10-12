@@ -122,7 +122,7 @@ export interface SalesOrder {
 
 export async function getSapSalesOrderDetail(docNum: string): Promise<SalesOrder | null> {
   try {
-    const response = await fetch(`/api/method/customer_portal.api.customer_balance.get_customer_order_detail?doc_num=${encodeURIComponent(docNum)}`);
+    const response = await fetch(`/api/method/sap_customer_portal.api.customer_balance.get_customer_order_detail?doc_num=${encodeURIComponent(docNum)}`);
     const data = await response.json();
     if (data.message && data.message.success) {
       return data.message.data as SalesOrder;
@@ -138,7 +138,7 @@ export async function getSapSalesOrderDetail(docNum: string): Promise<SalesOrder
 
 export async function getSapDeliveryNotes(): Promise<DeliveryNote[]> {
   try {
-    const response = await fetch('/api/method/customer_portal.api.customer_balance.get_customer_delivery_notes');
+    const response = await fetch('/api/method/sap_customer_portal.api.customer_balance.get_customer_delivery_notes');
     const data = await response.json();
     if (data.message && data.message.success) {
       return data.message.data as DeliveryNote[];
@@ -154,7 +154,7 @@ export async function getSapDeliveryNotes(): Promise<DeliveryNote[]> {
 
 export async function getSapDeliveryNoteDetail(docNum: string): Promise<DeliveryNote | null> {
   try {
-    const response = await fetch(`/api/method/customer_portal.api.customer_balance.get_customer_delivery_note_detail?doc_num=${encodeURIComponent(docNum)}`);
+    const response = await fetch(`/api/method/sap_customer_portal.api.customer_balance.get_customer_delivery_note_detail?doc_num=${encodeURIComponent(docNum)}`);
     const data = await response.json();
     if (data.message && data.message.success) {
       return data.message.data as DeliveryNote;
@@ -170,7 +170,7 @@ export async function getSapDeliveryNoteDetail(docNum: string): Promise<Delivery
 
 export async function getSapInvoices(): Promise<Invoice[]> {
   try {
-    const response = await fetch('/api/method/customer_portal.api.customer_balance.get_customer_invoices');
+    const response = await fetch('/api/method/sap_customer_portal.api.customer_balance.get_customer_invoices');
     const data = await response.json();
     if (data.message && data.message.success) {
       return data.message.data as Invoice[];
@@ -186,7 +186,7 @@ export async function getSapInvoices(): Promise<Invoice[]> {
 
 export async function getSapInvoiceDetail(docNum: string): Promise<Invoice | null> {
   try {
-    const response = await fetch(`/api/method/customer_portal.api.customer_balance.get_customer_invoice_detail?doc_num=${encodeURIComponent(docNum)}`);
+    const response = await fetch(`/api/method/sap_customer_portal.api.customer_balance.get_customer_invoice_detail?doc_num=${encodeURIComponent(docNum)}`);
     const data = await response.json();
     if (data.message && data.message.success) {
       return data.message.data as Invoice;
@@ -380,7 +380,7 @@ export async function getSalesInvoices(
 ): Promise<SalesInvoice[]> {
   // Use SAP B1 API instead of ERPNext
   try {
-    const response = await fetch("/api/method/customer_portal.api.customer_balance.get_customer_invoices");
+    const response = await fetch("/api/method/sap_customer_portal.api.customer_balance.get_customer_invoices");
     const data = await response.json();
     
     if (data.message && data.message.success) {
@@ -419,7 +419,7 @@ export async function getPaymentEntries(
 // SAP B1 API functions
 export async function getCustomerBalance(): Promise<any> {
   try {
-    const response = await fetch("/api/method/customer_portal.api.customer_balance.get_customer_balance");
+    const response = await fetch("/api/method/sap_customer_portal.api.customer_balance.get_customer_balance");
     const data = await response.json();
     
     if (data.message && data.message.success) {
@@ -436,7 +436,7 @@ export async function getCustomerBalance(): Promise<any> {
 
 export async function getCustomerDashboardData(): Promise<any> {
   try {
-    const response = await fetch("/api/method/customer_portal.api.customer_balance.get_customer_dashboard_data");
+    const response = await fetch("/api/method/sap_customer_portal.api.customer_balance.get_customer_dashboard_data");
     const data = await response.json();
     
     if (data.message && data.message.success) {
@@ -454,7 +454,7 @@ export async function getCustomerDashboardData(): Promise<any> {
 export async function getSapSalesOrders(): Promise<any[]> {
   try {
     console.log("Fetching SAP sales orders...");
-    const response = await fetch("/api/method/customer_portal.api.customer_balance.get_customer_orders");
+    const response = await fetch("/api/method/sap_customer_portal.api.customer_balance.get_customer_orders");
     console.log("SAP orders response status:", response.status);
     
     const data = await response.json();
@@ -581,7 +581,7 @@ export async function getPortalSettings(): Promise<PortalSettings | null> {
   try {
     // Use our whitelisted method instead of direct doctype access
     const response = await erpnextApi.get(
-      "/method/customer_portal.api.customer_statement.get_portal_settings"
+      "/method/sap_customer_portal.api.customer_statement.get_portal_settings"
     );
 
     if (response.data?.message) {
@@ -707,7 +707,7 @@ export const downloadCustomerStatement = async (
 
     // Use our whitelisted API method for Excel download
     const response = await erpnextApi.get(
-      "/method/customer_portal.api.customer_statement.download_customer_statement",
+      "/method/sap_customer_portal.api.customer_statement.download_customer_statement",
       {
         params: {
           customer: filters.customer,
@@ -759,7 +759,7 @@ export const openCustomerStatementPrintPreview = async (
 
     // Get HTML content for print preview
     const response = await erpnextApi.get(
-      "/method/customer_portal.api.customer_statement_pdf.get_customer_statement_pdf_preview",
+      "/method/sap_customer_portal.api.customer_statement_pdf.get_customer_statement_pdf_preview",
       {
         params: {
           customer: filters.customer,
@@ -810,7 +810,7 @@ export const getSapCustomerStatement = async (
 ): Promise<any> => {
   try {
     const response = await fetch(
-      `/api/method/customer_portal.api.customer_balance.get_customer_statement_from_sap`,
+      `/api/method/sap_customer_portal.api.customer_balance.get_customer_statement_from_sap`,
       {
         method: "POST",
         headers: {
@@ -844,7 +844,7 @@ export const getSapCustomerStatement = async (
 export const getSapCustomerPayments = async (): Promise<any> => {
   try {
     const response = await fetch(
-      `/api/method/customer_portal.api.customer_balance.get_customer_payments`,
+      `/api/method/sap_customer_portal.api.customer_balance.get_customer_payments`,
       {
         method: "GET",
         headers: {
@@ -880,7 +880,7 @@ export const getCustomerStatementData = async (
 
     // Use our whitelisted API method instead of direct query report access
     const response = await erpnextApi.get(
-      "/method/customer_portal.api.customer_statement.get_customer_statement_data",
+      "/method/sap_customer_portal.api.customer_statement.get_customer_statement_data",
       {
         params: {
           customer: filters.customer,
@@ -913,7 +913,7 @@ export const getCustomerListForStatements = async (): Promise<
 > => {
   try {
     const response = await erpnextApi.get(
-      "/method/customer_portal.api.customer_statement.get_customer_list"
+      "/method/sap_customer_portal.api.customer_statement.get_customer_list"
     );
 
     return response.data.message || [];
@@ -940,7 +940,7 @@ export async function getMonthlySalesOrderStats(months: number = 12): Promise<Mo
     let csrfToken = getCSRFToken();
     console.log("[DEBUG] Using CSRF token:", csrfToken);
     
-    let response = await fetch("/api/method/customer_portal.utils.get_monthly_sales_order_stats", {
+    let response = await fetch("/api/method/sap_customer_portal.utils.get_monthly_sales_order_stats", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -966,7 +966,7 @@ export async function getMonthlySalesOrderStats(months: number = 12): Promise<Mo
         
         if (freshToken) {
           console.log("[DEBUG] Retrying with fresh CSRF token:", freshToken);
-          response = await fetch("/api/method/customer_portal.utils.get_monthly_sales_order_stats", {
+          response = await fetch("/api/method/sap_customer_portal.utils.get_monthly_sales_order_stats", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -980,7 +980,7 @@ export async function getMonthlySalesOrderStats(months: number = 12): Promise<Mo
         } else {
           // Try 2: For customer users, try without CSRF token (some endpoints allow this)
           console.log("[DEBUG] Trying without CSRF token for customer users...");
-          response = await fetch("/api/method/customer_portal.utils.get_monthly_sales_order_stats", {
+          response = await fetch("/api/method/sap_customer_portal.utils.get_monthly_sales_order_stats", {
             method: "POST",
             headers: {
               "Content-Type": "application/json",
@@ -994,7 +994,7 @@ export async function getMonthlySalesOrderStats(months: number = 12): Promise<Mo
           if (!response.ok) {
             // Try 3: Use GET method instead of POST (some endpoints support GET)
             console.log("[DEBUG] Trying GET method instead of POST...");
-            response = await fetch(`/api/method/customer_portal.utils.get_monthly_sales_order_stats?months=${months}`, {
+            response = await fetch(`/api/method/sap_customer_portal.utils.get_monthly_sales_order_stats?months=${months}`, {
               method: "GET",
               credentials: "include"
             });

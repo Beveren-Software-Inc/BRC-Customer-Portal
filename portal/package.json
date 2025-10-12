@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vite build --base=/assets/customer_portal/portal/ && yarn copy-html-entry",
+    "build": "vite build --base=/assets/sap_customer_portal/portal/ && yarn copy-html-entry",
     "lint": "eslint .",
     "preview": "vite preview",
-    "copy-html-entry": " mkdir -p ../customer_portal/www && cp ../customer_portal/public/portal/index.html ../customer_portal/www/portal.html"
+    "copy-html-entry": " mkdir -p ../sap_customer_portal/www && cp ../sap_customer_portal/public/portal/index.html ../sap_customer_portal/www/portal.html"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",

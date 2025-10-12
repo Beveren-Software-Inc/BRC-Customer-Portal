@@ -1,6 +1,6 @@
 import frappe
 from frappe.utils.data import today, getdate
-from customer_portal import sap_api_utils
+from sap_customer_portal import sap_api_utils
 
 
 @frappe.whitelist()

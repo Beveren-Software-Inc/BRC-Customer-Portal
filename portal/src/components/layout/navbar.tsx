@@ -124,7 +124,7 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
   const handleClearCache = async () => {
     try {
       // Clear server-side cache
-      await fetch('/api/method/customer_portal.api.customer_balance.clear_customer_cache');
+      await fetch('/api/method/sap_customer_portal.api.customer_balance.clear_customer_cache');
       
       // Clear React Query cache
       queryClient.clear();

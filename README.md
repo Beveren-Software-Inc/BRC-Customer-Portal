@@ -1,12 +1,12 @@
-# Beveren Customer Portal
+# SAP Customer Portal
 
-![Beveren Customer Portal Banner](/.github/images/logo.jpg)
+![SAP Customer Portal Banner](/.github/images/logo.jpg)
 
 ## Overview
 
-Beveren Customer Portal is a comprehensive, modern customer interface designed specifically for ERPNext. This portal provides your customers with a secure, intuitive platform to access their business documents, track orders, manage payments, and submit support tickets—all within a sleek, responsive interface.
+SAP Customer Portal is a comprehensive, modern customer interface designed specifically for ERPNext. This portal provides your customers with a secure, intuitive platform to access their business documents, track orders, manage payments, and submit support tickets—all within a sleek, responsive interface.
 
-Built with React 19, TypeScript, and Vite, the Beveren Customer Portal delivers a lightning-fast user experience with real-time data synchronization to your ERPNext instance.
+Built with React 19, TypeScript, and Vite, the SAP Customer Portal delivers a lightning-fast user experience with real-time data synchronization to your ERPNext instance.
 
 ## Key Features
 
@@ -49,17 +49,17 @@ Built with React 19, TypeScript, and Vite, the Beveren Customer Portal delivers 
 
 2. Get the app from GitHub:
    ```bash
-   bench get-app customer_portal https://github.com/beverensoftware/beveren_customer_portal
+   bench get-app sap_customer_portal https://github.com/beverensoftware/sap_customer_portal
    ```
 
 3. Install the app to your site:
    ```bash
-   bench --site your-site.local install-app customer_portal
+   bench --site your-site.local install-app sap_customer_portal
    ```
 
 4. Build the frontend assets:
    ```bash
-   bench build --app customer_portal
+   bench build --app sap_customer_portal
    ```
 
 5. Restart your bench:
@@ -73,8 +73,8 @@ To set up a development environment:
 
 1. Clone the repository:
    ```bash
-   git clone https://github.com/beverensoftware/beveren_customer_portal.git
-   cd customer_portal
+   git clone https://github.com/beverensoftware/sap_customer_portal.git
+   cd sap_customer_portal
    ```
 
 2. Install dependencies:
@@ -107,7 +107,7 @@ The portal automatically sets up the necessary role permissions for customers du
 
 You can customize the portal's appearance:
 
-1. Update the logo at `customer_portal/public/logo.png`
+1. Update the logo at `sap_customer_portal/public/logo.png`
 2. Modify color schemes in `portal/src/index.css` (specifically the CSS variables in the `:root` section)
 3. Adjust the company name and contact details in the portal settings
 
@@ -121,7 +121,7 @@ You can customize the portal's appearance:
 
 ## Technical Architecture
 
-The Beveren Customer Portal consists of:
+The SAP Customer Portal consists of:
 
 1. **Frontend**: React 19 single-page application with:
    - TypeScript for type safety
@@ -149,7 +149,7 @@ A: Yes, the responsive design works seamlessly on mobile, tablet, and desktop de
 
 ## Support and Contribution
 
-For issues, feature requests, or contributions, please visit our [GitHub repository](https://github.com/beverensoftware/beveren_customer_portal).
+For issues, feature requests, or contributions, please visit our [GitHub repository](https://github.com/beverensoftware/sap_customer_portal).
 
 For commercial support or customization, contact us at support@beverensoftware.com.
 
@@ -159,4 +159,4 @@ This project is licensed under the MIT License - see the [license.txt](license.t
 
 ---
 
-© 2024 Beveren Software Inc. All rights reserved.
+© 2024 SAP Software Inc. All rights reserved.
