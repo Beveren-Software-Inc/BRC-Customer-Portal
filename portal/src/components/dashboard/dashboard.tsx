@@ -103,7 +103,6 @@ export default function Dashboard() {
     refetchOnMount: true,
     retry: 2,
   });
-  const salesStats: MonthlySalesOrderStat[] = Array.isArray(salesStatsRaw) ? salesStatsRaw : [];
   const salesStatsError = salesStatsIsError ? (salesStatsErrorObj?.message || "Failed to load stats") : null;
 
   // Define fields to fetch for each document type
@@ -191,6 +190,76 @@ export default function Dashboard() {
       refetchQuotations: () => Promise.resolve(), // No quotations to refetch
     };
   }, [sapDashboardData, sapDataLoading, sapDataError, refetchSapData]);
+
+  // Build MonthlySalesOrderStat from SAP orders (fallback to API when SAP data missing)
+  const salesStats: MonthlySalesOrderStat[] = useMemo(() => {
+    try {
+      const sourceOrders = Array.isArray(sapDashboardData?.orders) ? sapDashboardData.orders : [];
+      if (!sourceOrders.length) {
+        return Array.isArray(salesStatsRaw) ? salesStatsRaw : [];
+      }
+
+      const monthsToShowMap: Record<string, number> = {
+        current: 1,
+        previous: 1,
+        ytd: new Date().getMonth() + 1,
+        "3months": 3,
+        "6months": 6,
+        "12months": 12,
+      };
+      const monthsToShow = monthsToShowMap[salesTimeRange] ?? 12;
+
+      // Determine base date
+      let maxDate = new Date(0);
+      sourceOrders.forEach((o: any) => {
+        const ds = o.transaction_date || o.posting_date;
+        if (!ds) return;
+        const d = new Date(ds);
+        if (!isNaN(d.getTime()) && d > maxDate) maxDate = d;
+      });
+      const now = new Date();
+      const baseDate = maxDate > now ? maxDate : now;
+
+      // Create buckets for required months (YYYY-MM)
+      const buckets: Record<string, { month: string; order_amount: number; amount_paid: number; currency: string }>
+        = {};
+      for (let i = 0; i < monthsToShow; i++) {
+        const dt = new Date(baseDate);
+        dt.setMonth(dt.getMonth() - i, 1);
+        const key = `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, '0')}`;
+        buckets[key] = { month: key, order_amount: 0, amount_paid: 0, currency: 'SAR' };
+      }
+
+      // Lower bound date for range
+      const rangeStart = new Date(baseDate);
+      rangeStart.setMonth(rangeStart.getMonth() - (monthsToShow - 1), 1);
+
+      // Aggregate
+      sourceOrders.forEach((o: any) => {
+        const ds = o.transaction_date || o.posting_date;
+        if (!ds) return;
+        const d = new Date(ds);
+        if (isNaN(d.getTime())) return;
+        if (d < rangeStart || d > baseDate) return;
+        const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+        if (!buckets[key]) return;
+        
+        buckets[key].order_amount += o.grand_total || 0;
+        buckets[key].currency = o.currency || buckets[key].currency;
+        
+        // If order is Closed, it means fully delivered and invoiced, so count as paid
+        if (o.status === 'Closed') {
+          buckets[key].amount_paid += o.grand_total || 0;
+        }
+      });
+
+      // To array and sort ascending by month
+      const result = Object.values(buckets).sort((a, b) => a.month.localeCompare(b.month));
+      return result;
+    } catch (e) {
+      return Array.isArray(salesStatsRaw) ? salesStatsRaw : [];
+    }
+  }, [sapDashboardData, salesTimeRange, salesStatsRaw]);
 
   // Determine overall loading state
   const loading =
@@ -638,6 +707,9 @@ export default function Dashboard() {
               setSalesTimeRange={setSalesTimeRange}
               salesChartType={salesChartType}
               setSalesChartType={setSalesChartType}
+              invoices={invoices}
+              invoicesLoading={invoicesLoading as any}
+              invoicesError={invoicesError as any}
             />
           </CardContent>
         </Card>

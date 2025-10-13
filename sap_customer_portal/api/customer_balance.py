@@ -347,14 +347,13 @@ def get_customer_invoices():
 @frappe.whitelist()
 def get_customer_invoice_detail(doc_num: str = None):
     """Get a single customer invoice with items from SAP B1 by DocNum"""
+    
     try:
-        frappe.logger().info(f"[API] get_customer_invoice_detail called with doc_num: {doc_num}")
         customer_code = sap_api_utils.get_customer_code_from_user()
         if not customer_code:
             return {"error": True, "message": "No customer code found for current user"}
         if not doc_num:
             return {"error": True, "message": "Missing doc_num"}
-        frappe.logger().info(f"[API] Fetching invoice detail for customer_code: {customer_code}, doc_num: {doc_num}")
         detail = sap_api_utils.get_customer_invoice_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Invoice not found"}

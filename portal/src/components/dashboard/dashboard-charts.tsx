@@ -268,6 +268,9 @@ export interface DashboardChartsProps {
   setSalesTimeRange: (v: string) => void;
   salesChartType: "bar" | "line";
   setSalesChartType: (v: "bar" | "line") => void;
+  invoices: any[];
+  invoicesLoading: boolean;
+  invoicesError: string | null;
 }
 
 // Add a helper to format YYYY-MM to 'Mon YY'
@@ -287,6 +290,9 @@ export function DashboardCharts({
   setSalesTimeRange,
   salesChartType,
   setSalesChartType,
+  invoices,
+  invoicesLoading,
+  invoicesError,
 }: DashboardChartsProps) {
   // Chart filter states.
   const [invoiceTimeRange, setInvoiceTimeRange] = useState<
@@ -319,15 +325,12 @@ export function DashboardCharts({
     "items", // Explicitly include items field for Purchase History chart
   ];
 
-  // Use SAP data from dashboard instead of ERPNext
-  const orders = salesStats || []; // Use sales stats data for orders
-  const invoices: any[] = []; // No invoice data from SAP in charts for now
+  // Use SAP data passed from dashboard
+  const orders = salesStats || [];
   
   // Set loading and error states
   const ordersLoading = salesStatsLoading;
-  const invoicesLoading = false; // No invoice data loading
   const ordersError = salesStatsError;
-  const invoicesError = null; // No invoice data errors
 
   // Loading and error states
   const chartsLoading = {
@@ -593,6 +596,10 @@ export function DashboardCharts({
       };
 
       const colorMap: Record<string, string> = {
+        // SAP statuses
+        Closed: "#10b981", // green
+        Open: "#f59e0b",   // orange
+        // Additional/fallback statuses
         Paid: "#10b981",
         Unpaid: "#f59e0b",
         Overdue: "#ef4444",
@@ -697,15 +704,8 @@ export function DashboardCharts({
     </div>
   );
 
-  const refreshChartData = async (chartType: string) => {
-    switch (chartType) {
-      case "sales":
-        refetchOrders();
-        break;
-      case "invoice":
-        refetchInvoices();
-        break;
-    }
+  const refreshChartData = async (_chartType: string) => {
+    // No-op for now; parent page handles data refresh
   };
 
   // Custom tooltip for new chart
