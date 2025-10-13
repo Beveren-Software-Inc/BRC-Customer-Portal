@@ -1,100 +1,84 @@
 import frappe
 from frappe.utils.data import today, getdate
+from sap_customer_portal import sap_api_utils
 
 @frappe.whitelist()
 def get_customer_aging():
-    current_user = frappe.session.user
-    # Default: get customers linked to this user
-    customer_names = []
-    roles = frappe.get_roles(current_user)
-    if current_user == "Administrator" or "System Manager" or "Sales User" or "Sales Manager" in roles:
-        # Administrator and System Manager see all customers
-        customer_names = frappe.get_all("Customer", pluck="name")
-    else:
-        customers = frappe.get_all(
-            "Portal User",
-            filters={"user": current_user, "parenttype": "Customer"},
-            fields=["parent"]
-        )
-        customer_names = [c.parent for c in customers]
+    """Compute customer ageing from SAP invoices for all linked customer codes.
 
-    if not customer_names:
+    Logic:
+    - Resolve all customer CardCodes for current user (portal mapping or by email) using helper.
+    - Fetch SAP invoices per code via sap_api_utils.get_customer_invoices_from_sap.
+    - Outstanding = grand_total - paid_amount; include only if > 0.
+    - Age by posting_date (DocDate in SAP) into standard buckets.
+    - Currency: use invoice currency if available, else 'SAR'.
+    """
+    try:
+        # Resolve customer codes for user
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        codes = get_codes() if callable(get_codes) else []
+        if not codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if single:
+                codes = [single]
+        if not codes:
+            return {}
+
+        # Prepare ageing buckets
+        aging_data = {
+            "currency": "SAR",
+            "0_30": 0.00,
+            "31_60": 0.00,
+            "61_90": 0.00,
+            "91_120": 0.00,
+            "120_plus": 0.00,
+        }
+
+        today_date = getdate(today())
+        currency_set = False
+
+        # Fetch and process invoices per customer code
+        for code in codes:
+            invoices = sap_api_utils.get_customer_invoices_from_sap(code, limit=1000) or []
+            for inv in invoices:
+                grand_total = inv.get("grand_total", 0) or 0
+                paid_amount = inv.get("paid_amount", 0) or 0
+                outstanding = grand_total - paid_amount
+                if outstanding <= 0:
+                    continue
+
+                posting_date = inv.get("posting_date")
+                if not posting_date:
+                    continue
+                try:
+                    age_days = (today_date - getdate(posting_date)).days
+                except Exception:
+                    continue
+
+                # Set currency once if available
+                if not currency_set:
+                    cur = inv.get("currency")
+                    if cur:
+                        aging_data["currency"] = cur
+                        currency_set = True
+
+                if 0 <= age_days <= 30:
+                    aging_data["0_30"] += outstanding
+                elif 31 <= age_days <= 60:
+                    aging_data["31_60"] += outstanding
+                elif 61 <= age_days <= 90:
+                    aging_data["61_90"] += outstanding
+                elif 91 <= age_days <= 120:
+                    aging_data["91_120"] += outstanding
+                elif age_days > 120:
+                    aging_data["120_plus"] += outstanding
+
+        # Round values
+        for key in list(aging_data.keys()):
+            if key != "currency":
+                aging_data[key] = round(aging_data[key], 2)
+
+        return aging_data
+    except Exception as e:
+        frappe.log_error(f"Error computing customer ageing from SAP: {str(e)}", "Customer Portal")
         return {}
-
-    # Pick first customer to decide currency reference
-    first_customer = customer_names[0]
-    currency = frappe.get_value("Customer", first_customer, "default_currency") or "SAR"
-
-    # Fetch invoices for all these customers with outstanding amounts
-    invoices = frappe.get_all(
-        "Sales Invoice",
-        filters={
-            "customer": ["in", customer_names],
-            "outstanding_amount": [">", 0],
-            "docstatus": 1
-        },
-        fields=["posting_date", "outstanding_amount"]
-    )
-    
-    # Fetch unlinked return invoices (Credit Notes) that don't have return_against
-    # These will have negative outstanding amounts and should reduce the ageing balance
-    return_invoices = frappe.get_all(
-        "Sales Invoice",
-        filters={
-            "customer": ["in", customer_names],
-            "is_return": 1,
-            "return_against": ["is", "not set"],
-            "outstanding_amount": ["<", 0],
-            "docstatus": 1
-        },
-        fields=["posting_date", "outstanding_amount"]
-    )
-
-    # Aging buckets
-    aging_data = {
-        "currency": currency,
-        "0_30": 0.00,
-        "31_60": 0.00,
-        "61_90": 0.00,
-        "91_120": 0.00,
-        "120_plus": 0.00,
-    }
-
-    # Process regular invoices (positive outstanding amounts)
-    for inv in invoices:
-        age = (getdate(today()) - getdate(inv.posting_date)).days
-
-        if 0 <= age <= 30:
-            aging_data["0_30"] += inv.outstanding_amount
-        elif 31 <= age <= 60:
-            aging_data["31_60"] += inv.outstanding_amount
-        elif 61 <= age <= 90:
-            aging_data["61_90"] += inv.outstanding_amount
-        elif 91 <= age <= 120:
-            aging_data["91_120"] += inv.outstanding_amount
-        elif age > 120:
-            aging_data["120_plus"] += inv.outstanding_amount
-    
-    # Process return invoices (negative outstanding amounts) - these reduce the ageing balance
-    for ret_inv in return_invoices:
-        age = (getdate(today()) - getdate(ret_inv.posting_date)).days
-        # Use absolute value since outstanding_amount is negative for returns
-        return_amount = abs(ret_inv.outstanding_amount)
-
-        if 0 <= age <= 30:
-            aging_data["0_30"] -= return_amount
-        elif 31 <= age <= 60:
-            aging_data["31_60"] -= return_amount
-        elif 61 <= age <= 90:
-            aging_data["61_90"] -= return_amount
-        elif 91 <= age <= 120:
-            aging_data["91_120"] -= return_amount
-        elif age > 120:
-            aging_data["120_plus"] -= return_amount
-
-    # Round all values
-    for key in aging_data:
-        if key != "currency":
-            aging_data[key] = round(aging_data[key], 2)
-
-    return aging_data
