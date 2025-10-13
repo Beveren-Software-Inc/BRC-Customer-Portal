@@ -234,31 +234,6 @@ def get_customer_order_detail(doc_num: str = None):
         frappe.log_error(f"Error fetching order detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching order detail: {str(e)}"}
 
-@frappe.whitelist()
-def get_customer_delivery_notes():
-    """Get customer delivery notes directly from SAP B1"""
-    try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
-        
-        # Fetch delivery notes from SAP
-        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=500)
-        
-        return {
-            "success": True,
-            "data": delivery_notes
-        }
-        
-    except Exception as e:
-        frappe.log_error(f"Error fetching customer delivery notes: {str(e)}", "Customer Portal")
-        return {
-            "error": True,
-            "message": f"Error fetching customer delivery notes: {str(e)}"
-        }
 
 @frappe.whitelist()
 def get_customer_delivery_note_detail(doc_num: str = None):

@@ -133,8 +133,10 @@ export default function CustomerStatementList() {
       setCustomerCode(customerCode);
       setCustomerName(`${customerCode}: ${customerNameOnly}`);
     } else if (customerInfo.size > 1) {
-      setCustomerCode(""); // Multiple customers
-      setCustomerName(t("All Customers"));
+      // Multiple customers: use the first one (avoid "All Customers")
+      const [firstCode, firstName] = Array.from(customerInfo.entries())[0];
+      setCustomerCode(firstCode);
+      setCustomerName(`${firstCode}: ${firstName}`);
     } else {
       setCustomerCode(""); // No customers
       setCustomerName(t("Customer"));
