@@ -971,3 +971,45 @@ def get_customer_code_from_user():
         frappe.logger().error(f"Error getting customer code for user {current_user}: {str(e)}")
     
     return None
+
+
+def get_customer_codes_from_user():
+    """Return a list of customer codes for the current user.
+
+    Logic:
+    - If user is Administrator/System Manager, return None (meaning no filter, caller can decide) or []?
+      For portal context we want explicit list; keep behavior aligned with portal usage:
+      If admin/system manager, return all customers (names) to allow aggregation.
+    - Else, collect parents from `Portal User` where user == current_user and parenttype == Customer.
+    - If none found, fallback to Customer.email_id matching User.email to include all customers sharing same email.
+    """
+    current_user = frappe.session.user
+    try:
+        roles = frappe.get_roles(current_user)
+        if current_user == "Administrator" or "System Manager" in roles or "Sales Manager" in roles:
+            try:
+                all_customers = frappe.get_all("Customer", pluck="name")
+                return all_customers
+            except Exception:
+                return []
+
+        portal_customers = frappe.get_all(
+            "Portal User",
+            filters={"user": current_user, "parenttype": "Customer"},
+            pluck="parent"
+        )
+
+        if portal_customers:
+            return list(dict.fromkeys(portal_customers))
+
+        user_email = frappe.db.get_value("User", current_user, "email")
+        if user_email:
+            customers_by_email = frappe.get_all("Customer", filters={"email_id": user_email}, pluck="name")
+            if customers_by_email:
+                return list(dict.fromkeys(customers_by_email))
+    except Exception as e:
+        frappe.logger().error(f"Error getting customer codes for user {current_user}: {str(e)}")
+
+    # Fallback to single code helper to not break old behavior
+    single = get_customer_code_from_user()
+    return [single] if single else []

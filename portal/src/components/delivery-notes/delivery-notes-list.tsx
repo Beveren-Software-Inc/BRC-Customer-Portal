@@ -326,7 +326,7 @@ export default function DeliveryNotesList() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>{t('Delivery #')}</TableHead>
+                      <TableHead>{t('Delivery ID')}</TableHead>
                       <TableHead>{t('Customer')}</TableHead>
                       <TableHead>{t('Delivery Date')}</TableHead>
                       <TableHead>{t('Status')}</TableHead>

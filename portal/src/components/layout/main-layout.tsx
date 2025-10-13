@@ -211,7 +211,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
               className={`p-4 text-xs text-gray-500 dark:text-gray-400 ${styles.footerContent}`}
             >
               <div className="flex items-center justify-between">
-                <span>© 2025 SAP Software Inc</span>
+                <span>© 2025 Beveren Software Inc</span>
                 <span>v1.0.0</span>
               </div>
             </div>
