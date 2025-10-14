@@ -40,11 +40,9 @@ def clear_customer_cache():
 def get_customer_balance():
     """Get customer balance directly from SAP B1"""
     try:
-        current_user = frappe.session.user
-        frappe.logger().info(f"Getting customer balance for user: {current_user}")
+        _current_user = frappe.session.user
         
         customer_code = sap_api_utils.get_customer_code_from_user()
-        frappe.logger().info(f"Customer code: {customer_code}")
         
         if not customer_code:
             return {
@@ -60,11 +58,10 @@ def get_customer_balance():
                 "message": "SAP B1 settings not configured"
             }
         
-        frappe.logger().info(f"SAP settings available: {bool(settings)}")
         
         # Fetch balance from SAP
         balance_data = sap_api_utils.get_customer_balance_from_sap(customer_code)
-        frappe.logger().info(f"Balance data: {balance_data}")
+        print(f"Balance data: {balance_data}")
         
         if not balance_data:
             return {
@@ -170,12 +167,30 @@ def get_customer_dashboard_data():
         total_orders = len(orders)
         total_delivery_notes = len(delivery_notes)
 
-        unpaid_invoices = [inv for inv in invoices if inv.get('status') == 'Open']
-        unpaid_total = sum(inv.get('outstanding_amount', 0) for inv in unpaid_invoices)
+        # Compute unreconciled (open) invoices using SAP fields
+        # Only two statuses from SAP are used: Open and Closed
+        # Remaining amount = grand_total - paid_amount (PaidToDate)
+        unreconciled_invoices = []
+        unreconciled_total = 0
+        for inv in invoices:
+            if inv.get('status') == 'Open':
+                grand_total = inv.get('grand_total', 0) or 0
+                paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
+                remaining = grand_total - paid_amount
+                # Treat tiny negatives as zero due to rounding
+                remaining = remaining if abs(remaining) > 1e-6 else 0
+                if remaining > 0:
+                    unreconciled_invoices.append(inv)
+                    unreconciled_total += remaining
 
         today_date = getdate(today())
-        overdue_invoices = [inv for inv in unpaid_invoices if inv.get('due_date') and getdate(inv.get('due_date')) < today_date]
-        overdue_total = sum(inv.get('outstanding_amount', 0) for inv in overdue_invoices)
+        overdue_invoices = [inv for inv in unreconciled_invoices if inv.get('due_date') and getdate(inv.get('due_date')) < today_date]
+        overdue_total = 0
+        for inv in overdue_invoices:
+            grand_total = inv.get('grand_total', 0) or 0
+            paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
+            remaining = grand_total - paid_amount
+            overdue_total += remaining if remaining > 0 else 0
 
         undelivered_orders = [order for order in orders if order.get('status') == 'Open']
         undelivered_count = len(undelivered_orders)
@@ -195,10 +210,14 @@ def get_customer_dashboard_data():
                     "total_invoices": total_invoices,
                     "total_orders": total_orders,
                     "total_delivery_notes": total_delivery_notes,
-                    "unpaid_invoices": len(unpaid_invoices),
-                    "unpaid_total": unpaid_total,
+                    # New keys reflecting SAP logic
+                    "unreconciled_invoices": len(unreconciled_invoices),
+                    "unreconciled_total": unreconciled_total,
                     "overdue_invoices": len(overdue_invoices),
                     "overdue_total": overdue_total,
+                    # Backward-compatible aliases used by existing frontend
+                    "unpaid_invoices": len(unreconciled_invoices),
+                    "unpaid_total": unreconciled_total,
                     "undelivered_orders": undelivered_count,
                     "unbilled_deliveries": unbilled_count,
                     "unbilled_total": unbilled_total,

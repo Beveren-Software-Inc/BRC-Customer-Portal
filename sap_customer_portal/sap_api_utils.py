@@ -250,19 +250,20 @@ def get_customer_balance_from_sap(customer_code):
 
         # Fetch from SAP
         params = {
-            '$select': 'CardCode,CardName,CurrentAccountBalance,CreditLimit',
+            '$select': 'CardCode,CardName,CurrentAccountBalance,CreditLimit,Currency',
             '$filter': f"CardCode eq '{customer_code}'"
         }
         
         data = fetch_sap_data_with_session('BusinessPartners', params, None)
-
+        
         if data and len(data) > 0:
             customer_data = data[0]
             balance_info = {
                 'customer_code': customer_data.get('CardCode'),
                 'customer_name': customer_data.get('CardName'),
                 'current_balance': customer_data.get('CurrentAccountBalance', 0),
-                'credit_limit': customer_data.get('CreditLimit', 0)
+                'credit_limit': customer_data.get('CreditLimit', 0),
+                'currency': customer_data.get('Currency') or 'SAR'
             }
                         
             # Cache the result
@@ -482,20 +483,99 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500):
         
         # Limit to requested amount
         all_delivery_notes = all_delivery_notes[:limit]
+
+        # Fetch Returns (Delivery Note Returns) and merge, mark as is_return=1 and negate amounts
+        try:
+            returns = get_customer_delivery_returns_from_sap(customer_code, limit=limit)
+        except Exception:
+            returns = []
+        merged = (all_delivery_notes or []) + (returns or [])
         
         # Cache the result
-        set_cached_data(cache_key, all_delivery_notes)
-        frappe.logger().info(f"[SAP] Processed {len(all_delivery_notes)} delivery notes for customer {customer_code}")
-        return all_delivery_notes
+        set_cached_data(cache_key, merged)
+        frappe.logger().info(f"[SAP] Processed {len(merged)} delivery notes (incl. returns) for customer {customer_code}")
+        return merged
     
     except Exception as e:
         frappe.logger().error(f"Error fetching delivery notes from SAP: {str(e)}")
         return []
 
+def get_customer_delivery_returns_from_sap(customer_code, limit=500):
+    """Fetch delivery returns (SAP Returns entity) and map as negative delivery notes with is_return flag."""
+    try:
+        cache_key = f"delivery_returns_{customer_code}_{limit}"
+        cached_data = get_cached_data(cache_key)
+        if cached_data is not None:
+            frappe.logger().info(f"[SAP] Returning cached delivery returns: {len(cached_data)} records")
+            return cached_data
+
+        frappe.logger().info(f"[SAP] Fetching delivery returns for customer: {customer_code} with limit: {limit}")
+
+        all_returns = []
+        skip = 0
+        batch_size = 20
+        max_batches = (limit // batch_size) + 1
+
+        for batch_num in range(max_batches):
+            params = {
+                '$filter': f"CardCode eq '{customer_code}'",
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments',
+                '$orderby': 'DocDate desc',
+                '$top': batch_size,
+                '$skip': skip
+            }
+
+            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Returns params: {params}")
+            data = fetch_sap_data_with_session('Returns', params, None)
+
+            if isinstance(data, dict) and 'value' in data:
+                batch_data = data['value'] or []
+            elif isinstance(data, list):
+                batch_data = data
+            else:
+                batch_data = []
+
+            if not batch_data:
+                break
+
+            for rn in batch_data:
+                sap_status = rn.get('DocumentStatus')
+                status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
+
+                grand_total = rn.get('DocTotal', 0) or 0
+                rn_data = {
+                    'name': str(rn.get('DocNum', '')),
+                    'sap_doc_entry': rn.get('DocEntry'),
+                    'customer': str(rn.get('CardCode', '')),
+                    'customer_name': rn.get('CardName', ''),
+                    'posting_date': rn.get('DocDate'),
+                    'grand_total': -abs(grand_total),
+                    'currency': rn.get('DocCurrency', ''),
+                    'status': status,
+                    'comments': rn.get('Comments', ''),
+                    'is_return': 1,
+                }
+                all_returns.append(rn_data)
+
+            if len(all_returns) >= limit:
+                break
+
+            if len(batch_data) < batch_size:
+                break
+
+            skip += batch_size
+
+        all_returns = all_returns[:limit]
+        set_cached_data(cache_key, all_returns)
+        frappe.logger().info(f"[SAP] Processed {len(all_returns)} delivery returns for customer {customer_code}")
+        return all_returns
+    except Exception as e:
+        frappe.logger().error(f"Error fetching delivery returns from SAP: {str(e)}")
+        return []
+
 def get_customer_delivery_note_detail_from_sap(customer_code, doc_num):
     """Fetch a single delivery note with items from SAP B1 by DocNum using $expand (single call with fallback)."""
     try:
-        frappe.logger().info(f"[SAP] Fetching delivery note detail DocNum={doc_num}, CardCode={customer_code}")
         def fetch_with_filter(filter_str: str):
             params = {
                 '$filter': filter_str,
@@ -509,11 +589,9 @@ def get_customer_delivery_note_detail_from_sap(customer_code, doc_num):
             return []
         # Try DocNum + CardCode first
         delivery_notes = fetch_with_filter(f"DocNum eq {int(doc_num)} and CardCode eq '{customer_code}'")
-        frappe.logger().info(f"[SAP] Delivery notes with DocNum+CardCode: {len(delivery_notes)}")
         if not delivery_notes:
             # Fallback: DocNum only
             delivery_notes = fetch_with_filter(f"DocNum eq {int(doc_num)}")
-            frappe.logger().info(f"[SAP] Delivery notes with DocNum only: {len(delivery_notes)}")
         if not delivery_notes:
             return None
         delivery_note = delivery_notes[0]
@@ -530,7 +608,7 @@ def get_customer_delivery_note_detail_from_sap(customer_code, doc_num):
                 'item_name': ln.get('ItemDescription'),
                 'description': ln.get('ItemDescription'),
                 'qty': qty,
-                'delivered_qty': qty,  # For delivery notes, delivered_qty equals qty
+                'delivered_qty': qty,  
                 'uom': ln.get('UoMCode') or ln.get('MeasureUnit') or '',
                 'rate': rate,
                 'amount': amount,
@@ -635,13 +713,100 @@ def get_customer_invoices_from_sap(customer_code, limit=500):
         # Limit to requested amount
         all_invoices = all_invoices[:limit]
         
+        # Fetch credit notes and merge (credit notes appear as negative invoices with is_return=1)
+        try:
+            credit_notes = get_customer_credit_notes_from_sap(customer_code, limit=limit)
+        except Exception:
+            credit_notes = []
+        merged = (all_invoices or []) + (credit_notes or [])
+
         # Cache the result
-        set_cached_data(cache_key, all_invoices)
-        frappe.logger().info(f"[SAP] Processed {len(all_invoices)} invoices for customer {customer_code}")
-        return all_invoices
+        set_cached_data(cache_key, merged)
+        frappe.logger().info(f"[SAP] Processed {len(merged)} invoices (incl. credit notes) for customer {customer_code}")
+        return merged
     
     except Exception as e:
         frappe.logger().error(f"Error fetching invoices from SAP: {str(e)}")
+        return []
+
+def get_customer_credit_notes_from_sap(customer_code, limit=500):
+    """Fetch customer credit notes from SAP B1 and map as negative invoices with is_return flag."""
+    try:
+        cache_key = f"credit_notes_{customer_code}_{limit}"
+        cached_data = get_cached_data(cache_key)
+        if cached_data is not None:
+            frappe.logger().info(f"[SAP] Returning cached credit notes: {len(cached_data)} records")
+            return cached_data
+
+        frappe.logger().info(f"[SAP] Fetching credit notes for customer: {customer_code} with limit: {limit}")
+
+        all_notes = []
+        skip = 0
+        batch_size = 20
+        max_batches = (limit // batch_size) + 1
+
+        for batch_num in range(max_batches):
+            params = {
+                '$filter': f"CardCode eq '{customer_code}'",
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate',
+                '$orderby': 'DocDate desc',
+                '$top': batch_size,
+                '$skip': skip
+            }
+
+            frappe.logger().info(f"[SAP] Batch {batch_num + 1} - CreditNotes params: {params}")
+            data = fetch_sap_data_with_session('CreditNotes', params, None)
+
+            if isinstance(data, dict) and 'value' in data:
+                batch_data = data['value'] or []
+            elif isinstance(data, list):
+                batch_data = data
+            else:
+                batch_data = []
+
+            if not batch_data:
+                break
+
+            for cn in batch_data:
+                sap_status = cn.get('DocumentStatus')
+                status = 'Open' if sap_status == 'bost_Open' else 'Closed' if sap_status == 'bost_Close' else (sap_status or '')
+
+                grand_total = cn.get('DocTotal', 0) or 0
+                paid_amount = cn.get('PaidToDate', 0) or 0
+                outstanding_amount = grand_total - paid_amount
+
+                note_data = {
+                    'name': str(cn.get('DocNum', '')),
+                    'sap_doc_entry': cn.get('DocEntry'),
+                    'customer': str(cn.get('CardCode', '')),
+                    'customer_name': cn.get('CardName', ''),
+                    'posting_date': cn.get('DocDate'),
+                    'due_date': cn.get('DocDueDate'),
+                    # Represent credit note amounts as negative in UI context
+                    'grand_total': -abs(grand_total),
+                    'outstanding_amount': -abs(outstanding_amount),
+                    'paid_amount': paid_amount,  # paid against credit note
+                    'currency': cn.get('DocCurrency', ''),
+                    'status': status,
+                    'comments': cn.get('Comments', ''),
+                    'is_return': 1,
+                }
+                all_notes.append(note_data)
+
+            if len(all_notes) >= limit:
+                break
+
+            if len(batch_data) < batch_size:
+                break
+
+            skip += batch_size
+
+        all_notes = all_notes[:limit]
+        set_cached_data(cache_key, all_notes)
+        frappe.logger().info(f"[SAP] Processed {len(all_notes)} credit notes for customer {customer_code}")
+        return all_notes
+    except Exception as e:
+        frappe.logger().error(f"Error fetching credit notes from SAP: {str(e)}")
         return []
 
 def get_customer_payments_from_sap(customer_code, limit=500):

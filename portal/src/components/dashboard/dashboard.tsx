@@ -529,9 +529,11 @@ export default function Dashboard() {
           currency: "SAR",
         },
         {
-          title: "Unpaid Invoices",
-          value: unpaidInvoicesTotal,
-          count: typeof unpaidInvoices === 'number' ? unpaidInvoices.toString() : unpaidInvoices.length.toString(),
+          title: "Open Invoices",
+          value: typeof processedData?.summary?.unreconciled_total === 'number' ? processedData.summary.unreconciled_total : unpaidInvoicesTotal,
+          count: typeof processedData?.summary?.unreconciled_invoices === 'number' 
+            ? String(processedData.summary.unreconciled_invoices) 
+            : (typeof unpaidInvoices === 'number' ? unpaidInvoices.toString() : unpaidInvoices.length.toString()),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
           color: "bg-red-100 dark:bg-red-900",
           textColor: "text-red-800 dark:text-red-300",
@@ -644,7 +646,7 @@ export default function Dashboard() {
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {/* Customer Balance as a first card to align sizes */}
         <CustomerBalanceCard 
-          customerBalance={sapDashboardData?.customer_info || sapCustomerBalance || null}
+          customerBalance={sapCustomerBalance || null}
           loading={sapDataLoading || sapBalanceLoading}
         />
         {summaryData.map((item) => {
@@ -657,7 +659,7 @@ export default function Dashboard() {
           } else if (item.title === "Unbilled Deliveries") {
             onClick = () => navigate("/delivery-notes", { state: { initialStatus: ["open"] } });
             clickable = true;
-          } else if (item.title === "Unpaid Invoices") {
+          } else if (item.title === "Open Invoices") {
             onClick = () => navigate("/sales-invoices", { state: { initialStatus: ["open"] } });
             clickable = true;
           }
@@ -677,7 +679,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className={`text-xl sm:text-2xl font-bold ${item.textColor}`}>
-                  {item.title === "Unpaid Invoices" || item.title === "Unbilled Deliveries" ? (
+                  {item.title === "Open Invoices" || item.title === "Unbilled Deliveries" ? (
                     <DualCurrencyDisplay amount={item.value} currency={item.currency || currency || "SAR"} />
                   ) : (
                     item.value.toString()

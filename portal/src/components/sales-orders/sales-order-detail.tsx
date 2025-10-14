@@ -175,7 +175,9 @@ export default function SalesOrderDetail() {
     )
   }
 
-  const deliveryPercentage = order.per_delivered ? order.per_delivered : 0
+  const deliveryPercentage = (String(order.status || '').toLowerCase() === 'closed')
+    ? 100
+    : (order.per_delivered ? order.per_delivered : 0)
   const billingPercentage = order.per_billed ? order.per_billed : 0
 
   return (
@@ -361,19 +363,19 @@ export default function SalesOrderDetail() {
   </TableHeader>
   <TableBody>
     {order.items.map((item, index) => {
-      const delivered = item.delivered_qty || 0
-      const pending = ((item.qty || 0) - delivered).toFixed(3)
+      const isClosed = String(order.status || '').toLowerCase() === 'closed'
+      const delivered = isClosed ? (item.qty || 0) : (item.delivered_qty || 0)
+      const pending = isClosed ? '0.000' : ((item.qty || 0) - delivered).toFixed(3)
 
       return (
         <TableRow key={index} className="h-[48px]">
           <TableCell>
             <div className="py-1">
-              <p className="font-medium text-sm">
-                <span className="font-semibold">{item.item_code}: </span>
-                <span className="truncate max-w-[150px] sm:max-w-none inline-block">{item.item_name}</span>
+              <p className="font-medium text-sm max-w-[60%] break-words whitespace-normal">
+                {item.item_code}:{" "}{item.item_name}
               </p>
               {item.description && item.description !== item.item_name && (
-                <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block">{item.description}</p>
+                <p className="text-xs text-muted-foreground mt-0.5 hidden sm:block max-w-[60%] break-words whitespace-normal">{item.description}</p>
               )}
             </div>
           </TableCell>
@@ -416,7 +418,13 @@ export default function SalesOrderDetail() {
               <div className="flex justify-between py-1 border-t border-dashed">
                 <span className="text-muted-foreground">{t('Taxes & Charges')}:</span>
                 <DualCurrencyDisplay 
-                  amount={order.total_taxes_and_charges || 0} 
+                  amount={(typeof order.total_taxes_and_charges === 'number' && order.total_taxes_and_charges > 0) 
+                    ? order.total_taxes_and_charges 
+                    : (() => {
+                        const subtotal = order.items.reduce((sum, item) => sum + item.amount, 0);
+                        const diff = order.grand_total - subtotal;
+                        return Math.abs(diff) < 1e-6 ? 0 : diff;
+                      })()} 
                   currency={order.currency}
                   className="items-end"
                 />

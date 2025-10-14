@@ -5,9 +5,7 @@ function getCSRFToken(): string | null {
   // Get from global window variable (set by Frappe template)
   if (typeof window !== 'undefined' && (window as any).csrf_token) {
     const token = (window as any).csrf_token;
-    console.log("[DEBUG] CSRF Token from window:", token);
-    console.log("[DEBUG] CSRF Token length:", token ? token.length : 0);
-    console.log("[DEBUG] CSRF Token type:", typeof token);
+   
     return token;
   }
   
@@ -18,7 +16,6 @@ function getCSRFToken(): string | null {
 // Function to get fresh CSRF token from server
 async function getFreshCSRFToken(): Promise<string | null> {
   try {
-    console.log("[DEBUG] Fetching fresh CSRF token from server...");
     const response = await fetch("/api/method/frappe.sessions.get_csrf_token", {
       method: "GET",
       credentials: "include"
@@ -27,10 +24,8 @@ async function getFreshCSRFToken(): Promise<string | null> {
     if (response.ok) {
       const data = await response.json();
       const token = data.message;
-      console.log("[DEBUG] Fresh CSRF token received:", token);
       return token;
     } else if (response.status === 403) {
-      console.log("[DEBUG] Permission denied for CSRF token endpoint (403) - this is normal for customer users");
       return null;
     } else {
       console.error("[ERROR] Failed to get fresh CSRF token:", response.status);
@@ -57,11 +52,9 @@ erpnextApi.interceptors.request.use(
     // Only add CSRF token for POST, PUT, PATCH, DELETE requests
     if (['post', 'put', 'patch', 'delete'].includes(config.method?.toLowerCase() || '')) {
       const csrfToken = getCSRFToken();
-      console.log("[DEBUG] CSRF Token found:", csrfToken ? "Yes" : "No");
-      console.log("[DEBUG] CSRF Token value:", csrfToken);
+  
       if (csrfToken) {
         config.headers['X-Frappe-CSRF-Token'] = csrfToken;
-        console.log("[DEBUG] Added CSRF token to request headers");
       } else {
         console.warn("[WARNING] No CSRF token found for POST request");
       }
