@@ -258,6 +258,11 @@ export default function InvoicesList() {
                           >
                             {invoice.name}
                           </Link>
+                          {invoice.is_return ? (
+                            <span className="ml-2 inline-flex items-center rounded bg-red-100 px-2 py-0.5 text-[10px] font-semibold text-red-700 uppercase">
+                              {t('Return')}
+                            </span>
+                          ) : null}
                           <div className="text-sm text-muted-foreground mt-1 truncate max-w-[200px]">
                             {invoice.customer}
                           </div>
@@ -363,9 +368,11 @@ export default function InvoicesList() {
                       <TableHead className="hidden md:table-cell">{t('Customer')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Issue Date')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Due Date')}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t('Return')}</TableHead>
                       <TableHead>{t('Status')}</TableHead>
-                      <TableHead className="text-right">{t('Outstanding')}</TableHead>
-                      <TableHead className="text-right">{t('Actions')}</TableHead>
+                      <TableHead className="text-center">{t('Grand Total')}</TableHead>
+                      <TableHead className="text-center">{t('Outstanding')}</TableHead>
+                      <TableHead className="text-center">{t('Actions')}</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
@@ -413,18 +420,23 @@ export default function InvoicesList() {
                             {formatDate(invoice.posting_date)}
                           </TableCell>
                           <TableCell>{formatDate(invoice.due_date)}</TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            {invoice.is_return ? (
+                              <Badge variant="destructive">{t('Return')}</Badge>
+                            ) : null}
+                          </TableCell>
                           <TableCell>
                             <Badge variant={getStatusColor(invoice.status)}>
                               {invoice.status}
                             </Badge>
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-center">
                             <DualCurrencyDisplay
                               amount={invoice.grand_total}
                               currency={invoice.currency}
                             />
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-center">
                             <DualCurrencyDisplay
                               amount={invoice.outstanding_amount}
                               currency={invoice.currency}
@@ -435,7 +447,7 @@ export default function InvoicesList() {
                               }`}
                             />
                           </TableCell>
-                          <TableCell className="text-right">
+                          <TableCell className="text-center">
                             <div className="flex justify-end gap-2">
                               <Button variant="ghost" size="icon" asChild>
                                 <Link to={`/sales-invoices/${invoice.name}`}>

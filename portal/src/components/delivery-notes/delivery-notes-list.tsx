@@ -326,9 +326,10 @@ export default function DeliveryNotesList() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead>{t('Delivery #')}</TableHead>
+                      <TableHead>{t('Delivery ID')}</TableHead>
                       <TableHead>{t('Customer')}</TableHead>
                       <TableHead>{t('Delivery Date')}</TableHead>
+                      <TableHead className="hidden sm:table-cell">{t('Return')}</TableHead>
                       <TableHead>{t('Status')}</TableHead>
                       <TableHead className="text-right">{t('Value')}</TableHead>
                       <TableHead className="text-right">{t('Actions')}</TableHead>
@@ -374,6 +375,11 @@ export default function DeliveryNotesList() {
                           <TableCell>{delivery.customer}</TableCell>
                           <TableCell>
                             {formatDate(delivery.posting_date)}
+                          </TableCell>
+                          <TableCell className="hidden sm:table-cell">
+                            {delivery.is_return ? (
+                              <Badge variant="destructive">{t('Return')}</Badge>
+                            ) : null}
                           </TableCell>
                           <TableCell>
                             <Badge variant={getStatusColor(delivery.status)}>

@@ -18,7 +18,6 @@ interface CustomerBalanceCardProps {
 
 export default function CustomerBalanceCard({ customerBalance, loading }: CustomerBalanceCardProps) {
   const { currency } = useCurrency();
-
   if (loading) {
     return (
       <Card className="w-full">
@@ -54,7 +53,8 @@ export default function CustomerBalanceCard({ customerBalance, loading }: Custom
   }
 
   const { current_balance, customer_name, customer_code } = customerBalance;
-  
+  const displayCurrency = (customerBalance as any)?.currency || currency || 'SAR';
+  console.log("Display Currency:", displayCurrency);
   // Calculate balance status
   const balanceStatus = current_balance > 0 ? 'positive' : current_balance < 0 ? 'negative' : 'zero';
   
@@ -62,7 +62,7 @@ export default function CustomerBalanceCard({ customerBalance, loading }: Custom
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: currency || 'SAR',
+      currency: displayCurrency,
       minimumFractionDigits: 2,
     }).format(amount);
   };
@@ -78,13 +78,12 @@ export default function CustomerBalanceCard({ customerBalance, loading }: Custom
           {/* Customer Info */}
           <div className="text-xs text-muted-foreground">
             <p className="font-medium">{customer_name}</p>
-            <p>Code: {customer_code}</p>
           </div>
           
           {/* Current Balance */}
           <div className="space-y-1">
             <div className="flex items-center justify-between">
-              <span className="text-sm font-medium">Current Balance</span>
+              {/* <span className="text-sm font-medium">Current Balance</span> */}
               <div className="flex items-center space-x-1">
                 {balanceStatus === 'positive' && <TrendingUp className="h-3 w-3 text-green-500" />}
                 {balanceStatus === 'negative' && <TrendingDown className="h-3 w-3 text-red-500" />}

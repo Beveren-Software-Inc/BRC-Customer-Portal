@@ -268,6 +268,9 @@ export interface DashboardChartsProps {
   setSalesTimeRange: (v: string) => void;
   salesChartType: "bar" | "line";
   setSalesChartType: (v: "bar" | "line") => void;
+  invoices: any[];
+  invoicesLoading: boolean;
+  invoicesError: string | null;
 }
 
 // Add a helper to format YYYY-MM to 'Mon YY'
@@ -287,6 +290,9 @@ export function DashboardCharts({
   setSalesTimeRange,
   salesChartType,
   setSalesChartType,
+  invoices,
+  invoicesLoading,
+  invoicesError,
 }: DashboardChartsProps) {
   // Chart filter states.
   const [invoiceTimeRange, setInvoiceTimeRange] = useState<
@@ -319,15 +325,12 @@ export function DashboardCharts({
     "items", // Explicitly include items field for Purchase History chart
   ];
 
-  // Use SAP data from dashboard instead of ERPNext
-  const orders = salesStats || []; // Use sales stats data for orders
-  const invoices: any[] = []; // No invoice data from SAP in charts for now
+  // Use SAP data passed from dashboard
+  const orders = salesStats || [];
   
   // Set loading and error states
   const ordersLoading = salesStatsLoading;
-  const invoicesLoading = false; // No invoice data loading
   const ordersError = salesStatsError;
-  const invoicesError = null; // No invoice data errors
 
   // Loading and error states
   const chartsLoading = {
@@ -593,6 +596,10 @@ export function DashboardCharts({
       };
 
       const colorMap: Record<string, string> = {
+        // SAP statuses
+        Closed: "#10b981", // green
+        Open: "#f59e0b",   // orange
+        // Additional/fallback statuses
         Paid: "#10b981",
         Unpaid: "#f59e0b",
         Overdue: "#ef4444",
@@ -605,20 +612,23 @@ export function DashboardCharts({
       const processedData: Record<string, any[]> = {};
 
       Object.entries(periods).forEach(([period, filterFn]) => {
-        const filteredInvoices = invoiceData.filter(filterFn);
+        let filteredInvoices = invoiceData.filter(filterFn);
 
-        if (filteredInvoices.length === 0) {
-          processedData[period] = [];
-          return;
+        // Fallback: if nothing matches the period filter but data exists, use all invoices
+        if (filteredInvoices.length === 0 && invoiceData.length > 0) {
+          filteredInvoices = invoiceData.slice();
         }
 
         const statusGroups: Record<string, number> = {};
         filteredInvoices.forEach((invoice) => {
-          if (!invoice.status) return; // Skip invoices without status
-          if (!statusGroups[invoice.status]) {
-            statusGroups[invoice.status] = 0;
+          const statusRaw = invoice.status || "";
+          const status = typeof statusRaw === "string" ? statusRaw.trim() : String(statusRaw);
+          if (!status) return; // Skip invoices without status
+          if (!statusGroups[status]) {
+            statusGroups[status] = 0;
           }
-          statusGroups[invoice.status] += invoice.grand_total || 0;
+          const amount = typeof invoice.grand_total === "number" ? invoice.grand_total : Number(invoice.grand_total || 0);
+          statusGroups[status] += isNaN(amount) ? 0 : amount;
         });
 
         const totalAmount = Object.values(statusGroups).reduce(
@@ -697,15 +707,8 @@ export function DashboardCharts({
     </div>
   );
 
-  const refreshChartData = async (chartType: string) => {
-    switch (chartType) {
-      case "sales":
-        refetchOrders();
-        break;
-      case "invoice":
-        refetchInvoices();
-        break;
-    }
+  const refreshChartData = async (_chartType: string) => {
+    // No-op for now; parent page handles data refresh
   };
 
   // Custom tooltip for new chart

@@ -347,8 +347,8 @@ export default function DeliveryNoteDetail() {
             {delivery.status.toLowerCase() === "completed"
               ? t('delivered')
               : delivery.status.toLowerCase() === "to bill"
-              ? t('in transit')
-              : t('in this delivery note')}
+              ? t(' in transit')
+              : t(' in this delivery note')}
           </CardDescription>
         </CardHeader>
         <CardContent className="p-0">
@@ -370,15 +370,12 @@ export default function DeliveryNoteDetail() {
                 <TableRow key={index} className="h-[48px]">
                   <TableCell>
                     <div className="py-1">
-                      <p className="font-medium text-sm">
-                        <span className="font-semibold">
-                          {item.item_code}:{" "}
-                        </span>
-                        {item.item_name}
+                      <p className="font-medium text-sm max-w-[60%] break-words whitespace-normal">
+                        {item.item_code}:{" "}{item.item_name}
                       </p>
                       {item.description &&
                         item.description !== item.item_name && (
-                          <p className="text-xs text-muted-foreground mt-0.5">
+                          <p className="text-xs text-muted-foreground mt-0.5 max-w-[60%] break-words whitespace-normal">
                             {item.description}
                           </p>
                         )}
@@ -434,7 +431,13 @@ export default function DeliveryNoteDetail() {
               <div className="flex justify-between py-1 border-t border-dashed">
                 <span className="text-muted-foreground">{t('Taxes & Charges')}:</span>
                 <DualCurrencyDisplay
-                  amount={delivery.total_taxes_and_charges || 0}
+                  amount={(typeof delivery.total_taxes_and_charges === 'number' && delivery.total_taxes_and_charges > 0)
+                    ? delivery.total_taxes_and_charges
+                    : (() => {
+                        const subtotal = delivery.items.reduce((sum, item) => sum + item.amount, 0);
+                        const diff = delivery.grand_total - subtotal;
+                        return Math.abs(diff) < 1e-6 ? 0 : diff;
+                      })()}
                   currency={delivery.currency}
                   className="items-end"
                 />

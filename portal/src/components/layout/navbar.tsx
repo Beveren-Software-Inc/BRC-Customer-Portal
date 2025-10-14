@@ -69,11 +69,11 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
     });
     
     // If there's only one unique customer, use that name
-    // Otherwise, use "All Customers"
+    // If multiple, show the first customer's name (avoid "All Customers")
     if (customerNames.size === 1) {
       setCustomerName(Array.from(customerNames)[0]);
     } else if (customerNames.size > 1) {
-      setCustomerName("All Customers");
+      setCustomerName(Array.from(customerNames)[0]);
     } else {
       setCustomerName("Customer");
     }

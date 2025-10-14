@@ -7,18 +7,26 @@ from sap_customer_portal import sap_api_utils
 def clear_customer_cache():
     """Clear all cached data for the current customer"""
     try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
+        # Clear for all linked customer codes
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        codes = get_codes() if callable(get_codes) else []
+        if not codes:
+            customer_code = sap_api_utils.get_customer_code_from_user()
+            codes = [customer_code] if customer_code else []
+        if not codes:
             return {
                 "error": True,
                 "message": "No customer code found for current user"
             }
         
-        success = sap_api_utils.clear_cache_for_customer(customer_code)
+        success = True
+        for code in codes:
+            ok = sap_api_utils.clear_cache_for_customer(code)
+            success = success and bool(ok)
         
         return {
             "success": success,
-            "message": f"Cache cleared for customer {customer_code}" if success else "Failed to clear cache"
+            "message": "Cache cleared" if success else "Failed to clear cache for some customers"
         }
         
     except Exception as e:
@@ -32,11 +40,9 @@ def clear_customer_cache():
 def get_customer_balance():
     """Get customer balance directly from SAP B1"""
     try:
-        current_user = frappe.session.user
-        frappe.logger().info(f"Getting customer balance for user: {current_user}")
+        _current_user = frappe.session.user
         
         customer_code = sap_api_utils.get_customer_code_from_user()
-        frappe.logger().info(f"Customer code: {customer_code}")
         
         if not customer_code:
             return {
@@ -52,11 +58,10 @@ def get_customer_balance():
                 "message": "SAP B1 settings not configured"
             }
         
-        frappe.logger().info(f"SAP settings available: {bool(settings)}")
         
         # Fetch balance from SAP
         balance_data = sap_api_utils.get_customer_balance_from_sap(customer_code)
-        frappe.logger().info(f"Balance data: {balance_data}")
+        print(f"Balance data: {balance_data}")
         
         if not balance_data:
             return {
@@ -78,23 +83,23 @@ def get_customer_balance():
 
 @frappe.whitelist()
 def get_customer_orders():
-    """Get customer sales orders directly from SAP B1"""
+    """Get customer sales orders across all linked customer codes"""
     try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
-        
-        # Fetch orders from SAP
-        orders = sap_api_utils.get_customer_orders_from_sap(customer_code, limit=500)
-        
-        return {
-            "success": True,
-            "data": orders
-        }
-        
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        codes = get_codes() if callable(get_codes) else []
+        if not codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if not single:
+                return {"error": True, "message": "No customer code found for current user"}
+            codes = [single]
+
+        all_orders = []
+        for code in codes:
+            all_orders.extend(sap_api_utils.get_customer_orders_from_sap(code, limit=500))
+
+        all_orders.sort(key=lambda o: o.get("transaction_date") or "", reverse=True)
+        return {"success": True, "data": all_orders}
+
     except Exception as e:
         frappe.log_error(f"Error fetching customer orders: {str(e)}", "Customer Portal")
         return {
@@ -104,23 +109,23 @@ def get_customer_orders():
 
 @frappe.whitelist()
 def get_customer_delivery_notes():
-    """Get customer delivery notes directly from SAP B1"""
+    """Get customer delivery notes across all linked customer codes"""
     try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
-        
-        # Fetch delivery notes from SAP
-        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=500)
-        
-        return {
-            "success": True,
-            "data": delivery_notes
-        }
-        
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        codes = get_codes() if callable(get_codes) else []
+        if not codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if not single:
+                return {"error": True, "message": "No customer code found for current user"}
+            codes = [single]
+
+        all_dns = []
+        for code in codes:
+            all_dns.extend(sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=500))
+
+        all_dns.sort(key=lambda d: d.get("posting_date") or d.get("transaction_date") or "", reverse=True)
+        return {"success": True, "data": all_dns}
+
     except Exception as e:
         frappe.log_error(f"Error fetching customer delivery notes: {str(e)}", "Customer Portal")
         return {
@@ -130,67 +135,94 @@ def get_customer_delivery_notes():
 
 @frappe.whitelist()
 def get_customer_dashboard_data():
-    """Get all customer data for dashboard in one call"""
+    """Get all customer data for dashboard in one call across linked customer codes"""
     try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
-        
-        # Fetch all data from SAP
-        balance_data = sap_api_utils.get_customer_balance_from_sap(customer_code)
-        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=500)
-        orders = sap_api_utils.get_customer_orders_from_sap(customer_code, limit=500)
-        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=500)
-        
-        frappe.logger().info(f"[Dashboard] Fetched {len(delivery_notes)} delivery notes for customer {customer_code}")
-        
-        # Calculate summary statistics
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        codes = get_codes() if callable(get_codes) else []
+        if not codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if not single:
+                return {"error": True, "message": "No customer code found for current user"}
+            codes = [single]
+
+        balances, invoices, orders, delivery_notes = [], [], [], []
+        for code in codes:
+            b = sap_api_utils.get_customer_balance_from_sap(code)
+            if b:
+                balances.append(b)
+            invoices.extend(sap_api_utils.get_customer_invoices_from_sap(code, limit=500))
+            orders.extend(sap_api_utils.get_customer_orders_from_sap(code, limit=500))
+            delivery_notes.extend(sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=500))
+
+        total_current_balance = sum((b.get('current_balance', 0) for b in balances)) if balances else 0
+        total_credit_limit = sum((b.get('credit_limit', 0) for b in balances)) if balances else 0
+        customer_info = {
+            "customer_code": ",".join([b.get("customer_code", "") for b in balances]) if balances else None,
+            "customer_name": balances[0].get("customer_name") if balances else None,
+            "current_balance": total_current_balance,
+            "credit_limit": total_credit_limit,
+        }
+
         total_invoices = len(invoices)
         total_orders = len(orders)
         total_delivery_notes = len(delivery_notes)
-        
-        # Calculate unpaid invoices total (Open invoices from SAP)
-        unpaid_invoices = [inv for inv in invoices if inv.get('status') == 'Open']
-        unpaid_total = sum(inv.get('outstanding_amount', 0) for inv in unpaid_invoices)
-        
-        # Calculate overdue invoices
+
+        # Compute unreconciled (open) invoices using SAP fields
+        # Only two statuses from SAP are used: Open and Closed
+        # Remaining amount = grand_total - paid_amount (PaidToDate)
+        unreconciled_invoices = []
+        unreconciled_total = 0
+        for inv in invoices:
+            if inv.get('status') == 'Open':
+                grand_total = inv.get('grand_total', 0) or 0
+                paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
+                remaining = grand_total - paid_amount
+                # Treat tiny negatives as zero due to rounding
+                remaining = remaining if abs(remaining) > 1e-6 else 0
+                if remaining > 0:
+                    unreconciled_invoices.append(inv)
+                    unreconciled_total += remaining
+
         today_date = getdate(today())
-        overdue_invoices = [inv for inv in unpaid_invoices 
-                           if inv.get('due_date') and getdate(inv.get('due_date')) < today_date]
-        overdue_total = sum(inv.get('outstanding_amount', 0) for inv in overdue_invoices)
-        
-        # Calculate undelivered orders (Open sales orders from SAP)
+        overdue_invoices = [inv for inv in unreconciled_invoices if inv.get('due_date') and getdate(inv.get('due_date')) < today_date]
+        overdue_total = 0
+        for inv in overdue_invoices:
+            grand_total = inv.get('grand_total', 0) or 0
+            paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
+            remaining = grand_total - paid_amount
+            overdue_total += remaining if remaining > 0 else 0
+
         undelivered_orders = [order for order in orders if order.get('status') == 'Open']
         undelivered_count = len(undelivered_orders)
-        
-        # Calculate unbilled deliveries (Open delivery notes from SAP)
+
         unbilled_deliveries = [dn for dn in delivery_notes if dn.get('status') == 'Open']
         unbilled_count = len(unbilled_deliveries)
         unbilled_total = sum(dn.get('grand_total', 0) for dn in unbilled_deliveries)
-        
+
         return {
             "success": True,
             "data": {
-                "customer_info": balance_data,
-                "invoices": invoices,
-                "orders": orders,
-                "delivery_notes": delivery_notes,
+                "customer_info": customer_info,
+                "invoices": sorted(invoices, key=lambda i: i.get("posting_date") or "", reverse=True),
+                "orders": sorted(orders, key=lambda o: o.get("transaction_date") or "", reverse=True),
+                "delivery_notes": sorted(delivery_notes, key=lambda d: d.get("posting_date") or "", reverse=True),
                 "summary": {
                     "total_invoices": total_invoices,
                     "total_orders": total_orders,
                     "total_delivery_notes": total_delivery_notes,
-                    "unpaid_invoices": len(unpaid_invoices),
-                    "unpaid_total": unpaid_total,
+                    # New keys reflecting SAP logic
+                    "unreconciled_invoices": len(unreconciled_invoices),
+                    "unreconciled_total": unreconciled_total,
                     "overdue_invoices": len(overdue_invoices),
                     "overdue_total": overdue_total,
+                    # Backward-compatible aliases used by existing frontend
+                    "unpaid_invoices": len(unreconciled_invoices),
+                    "unpaid_total": unreconciled_total,
                     "undelivered_orders": undelivered_count,
                     "unbilled_deliveries": unbilled_count,
                     "unbilled_total": unbilled_total,
-                    "current_balance": balance_data.get('current_balance', 0) if balance_data else 0,
-                    "credit_limit": balance_data.get('credit_limit', 0) if balance_data else 0
+                    "current_balance": total_current_balance,
+                    "credit_limit": total_credit_limit,
                 }
             }
         }
@@ -221,31 +253,6 @@ def get_customer_order_detail(doc_num: str = None):
         frappe.log_error(f"Error fetching order detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching order detail: {str(e)}"}
 
-@frappe.whitelist()
-def get_customer_delivery_notes():
-    """Get customer delivery notes directly from SAP B1"""
-    try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
-        
-        # Fetch delivery notes from SAP
-        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(customer_code, limit=500)
-        
-        return {
-            "success": True,
-            "data": delivery_notes
-        }
-        
-    except Exception as e:
-        frappe.log_error(f"Error fetching customer delivery notes: {str(e)}", "Customer Portal")
-        return {
-            "error": True,
-            "message": f"Error fetching customer delivery notes: {str(e)}"
-        }
 
 @frappe.whitelist()
 def get_customer_delivery_note_detail(doc_num: str = None):
@@ -268,23 +275,23 @@ def get_customer_delivery_note_detail(doc_num: str = None):
 
 @frappe.whitelist()
 def get_customer_payments():
-    """Get customer payments directly from SAP B1"""
+    """Get customer payments across all linked customer codes"""
     try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
-        
-        # Fetch payments from SAP
-        payments = sap_api_utils.get_customer_payments_from_sap(customer_code, limit=500)
-        
-        return {
-            "success": True,
-            "data": payments
-        }
-        
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        codes = get_codes() if callable(get_codes) else []
+        if not codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if not single:
+                return {"error": True, "message": "No customer code found for current user"}
+            codes = [single]
+
+        all_payments = []
+        for code in codes:
+            all_payments.extend(sap_api_utils.get_customer_payments_from_sap(code, limit=500))
+
+        all_payments.sort(key=lambda p: p.get("posting_date") or "", reverse=True)
+        return {"success": True, "data": all_payments}
+
     except Exception as e:
         frappe.log_error(f"Error fetching customer payments: {str(e)}", "Customer Portal")
         return {
@@ -332,23 +339,23 @@ def get_customer_statement_from_sap(from_date=None, to_date=None):
 
 @frappe.whitelist()
 def get_customer_invoices():
-    """Get customer invoices directly from SAP B1"""
+    """Get customer invoices across all linked customer codes"""
     try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
-        
-        # Fetch invoices from SAP
-        invoices = sap_api_utils.get_customer_invoices_from_sap(customer_code, limit=500)
-        
-        return {
-            "success": True,
-            "data": invoices
-        }
-        
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        codes = get_codes() if callable(get_codes) else []
+        if not codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if not single:
+                return {"error": True, "message": "No customer code found for current user"}
+            codes = [single]
+
+        all_invoices = []
+        for code in codes:
+            all_invoices.extend(sap_api_utils.get_customer_invoices_from_sap(code, limit=500))
+
+        all_invoices.sort(key=lambda i: i.get("posting_date") or "", reverse=True)
+        return {"success": True, "data": all_invoices}
+
     except Exception as e:
         frappe.log_error(f"Error fetching customer invoices: {str(e)}", "Customer Portal")
         return {
@@ -359,14 +366,13 @@ def get_customer_invoices():
 @frappe.whitelist()
 def get_customer_invoice_detail(doc_num: str = None):
     """Get a single customer invoice with items from SAP B1 by DocNum"""
+    
     try:
-        frappe.logger().info(f"[API] get_customer_invoice_detail called with doc_num: {doc_num}")
         customer_code = sap_api_utils.get_customer_code_from_user()
         if not customer_code:
             return {"error": True, "message": "No customer code found for current user"}
         if not doc_num:
             return {"error": True, "message": "Missing doc_num"}
-        frappe.logger().info(f"[API] Fetching invoice detail for customer_code: {customer_code}, doc_num: {doc_num}")
         detail = sap_api_utils.get_customer_invoice_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Invoice not found"}

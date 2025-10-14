@@ -288,12 +288,11 @@ export default function InvoiceDetail() {
                 <TableRow key={index} className="h-[48px]">
                   <TableCell>
                     <div className="py-1">
-                      <p className="font-medium text-sm">
-                        <span className="font-semibold">{item.item_code}: </span>
-                        {item.item_name}
+                      <p className="font-medium text-sm max-w-[60%] break-words whitespace-normal">
+                        {item.item_code}:{" "}{item.item_name}
                       </p>
                       {item.description && item.description !== item.item_name && (
-                        <p className="text-xs text-muted-foreground mt-0.5">{item.description}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5 max-w-[60%] break-words whitespace-normal">{item.description}</p>
                       )}
                     </div>
                   </TableCell>
@@ -326,7 +325,13 @@ export default function InvoiceDetail() {
               <div className="flex justify-between py-1 border-t border-dashed">
                 <span className="text-muted-foreground">{t('Taxes & Charges')}:</span>
                 <DualCurrencyDisplay 
-                  amount={invoice.total_taxes_and_charges || 0} 
+                  amount={(typeof invoice.total_taxes_and_charges === 'number' && invoice.total_taxes_and_charges > 0)
+                    ? invoice.total_taxes_and_charges
+                    : (() => {
+                        const subtotal = invoice.items.reduce((sum, item) => sum + item.amount, 0);
+                        const diff = invoice.grand_total - subtotal;
+                        return Math.abs(diff) < 1e-6 ? 0 : diff;
+                      })()} 
                   currency={invoice.currency}
                   className="items-end"
                 />
