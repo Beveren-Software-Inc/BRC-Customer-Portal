@@ -306,7 +306,7 @@ export default function SalesOrderDetail() {
           </CardContent>
         </Card>
         
-        <Card>
+        {/* <Card>
           <CardHeader>
             <CardTitle className="text-base flex items-center gap-2">
               <Wallet className="h-4 w-4" />
@@ -335,7 +335,7 @@ export default function SalesOrderDetail() {
               </div>
             </div>
           </CardContent>
-        </Card>
+        </Card> */}
       </div>
 
       {/* Items Table */}

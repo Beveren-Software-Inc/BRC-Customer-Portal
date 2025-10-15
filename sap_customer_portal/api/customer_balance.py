@@ -363,6 +363,107 @@ def get_customer_invoices():
             "message": f"Error fetching customer invoices: {str(e)}"
         }
 
+
+@frappe.whitelist()
+def get_invoice_status_summary(period: str = "12months"):
+    """Return invoice status amount buckets for the current user's customers.
+
+    period: one of [current, previous, ytd, 3months, 6months, 12months]
+    """
+    try:
+        valid_periods = {"current", "previous", "ytd", "3months", "6months", "12months"}
+        if period not in valid_periods:
+            period = "12months"
+
+        # Resolve customers
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        codes = get_codes() if callable(get_codes) else []
+        if not codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if not single:
+                return {"error": True, "message": "No customer code found for current user"}
+            codes = [single]
+
+        # Collect invoices with a conservative limit (server aggregates, so keep reasonable bound)
+        invoices = []
+        for code in codes:
+            invoices.extend(sap_api_utils.get_customer_invoices_from_sap(code, limit=500))
+
+        # Filter by period
+        today_dt = getdate(today())
+        def in_period(inv):
+            d = inv.get("posting_date")
+            if not d:
+                return False
+            inv_date = getdate(d)
+            if period == "current":
+                return inv_date.month == today_dt.month and inv_date.year == today_dt.year
+            if period == "previous":
+                prev_month = 12 if today_dt.month == 1 else today_dt.month - 1
+                prev_year = today_dt.year - 1 if today_dt.month == 1 else today_dt.year
+                return inv_date.month == prev_month and inv_date.year == prev_year
+            if period == "ytd":
+                return inv_date.year == today_dt.year
+            if period == "3months":
+                # simple approx: 90 days window
+                from frappe.utils.data import add_days
+                three_months_ago = add_days(today_dt, -90)
+                return inv_date >= three_months_ago and inv_date <= today_dt
+            if period == "6months":
+                from frappe.utils.data import add_days
+                six_months_ago = add_days(today_dt, -180)
+                return inv_date >= six_months_ago and inv_date <= today_dt
+            # 12months
+            from frappe.utils.data import add_days
+            twelve_months_ago = add_days(today_dt, -365)
+            return inv_date >= twelve_months_ago and inv_date <= today_dt
+
+        filtered = [inv for inv in invoices if in_period(inv)] or invoices
+
+        # Group by status and sum grand_total
+        status_totals = {}
+        for inv in filtered:
+            status = inv.get("status") or ""
+            if not isinstance(status, str):
+                status = str(status)
+            amount = inv.get("grand_total")
+            try:
+                amount = float(amount or 0)
+            except Exception:
+                amount = 0.0
+            status_totals[status] = status_totals.get(status, 0.0) + amount
+
+        total_amount = sum(status_totals.values()) if status_totals else 0.0
+
+        # Color map aligned with frontend
+        color_map = {
+            "Closed": "#10b981",
+            "Open": "#f59e0b",
+            "Paid": "#10b981",
+            "Unpaid": "#f59e0b",
+            "Overdue": "#ef4444",
+            "Cancelled": "#6b7280",
+            "Draft": "#6366f1",
+            "Return": "#8b5cf6",
+            "Submitted": "#3b82f6",
+        }
+
+        buckets = []
+        if total_amount > 0:
+            for k, v in status_totals.items():
+                buckets.append({
+                    "name": k,
+                    "value": v,
+                    "percentage": (v / total_amount) * 100.0,
+                    "total": total_amount,
+                    "color": color_map.get(k, "#94a3b8"),
+                })
+
+        return {"success": True, "data": {"period": period, "buckets": buckets, "total": total_amount}}
+    except Exception as e:
+        frappe.log_error(f"Error building invoice status summary: {str(e)}", "Customer Portal")
+        return {"error": True, "message": f"Error building invoice status summary: {str(e)}"}
+
 @frappe.whitelist()
 def get_customer_invoice_detail(doc_num: str = None):
     """Get a single customer invoice with items from SAP B1 by DocNum"""
@@ -380,3 +481,87 @@ def get_customer_invoice_detail(doc_num: str = None):
     except Exception as e:
         frappe.log_error(f"Error fetching invoice detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching invoice detail: {str(e)}"}
+
+
+@frappe.whitelist()
+def get_user_companies():
+    """
+    Get list of companies available to the current user
+    This is a whitelisted method that respects user permissions
+    """
+    try:
+        # Get companies that the user has access to
+        companies = frappe.get_all(
+            "Company",
+            fields=["name", "company_name"],
+            order_by="name"
+        )
+        
+        return {
+            "companies": companies,
+            "success": True
+        }
+    except Exception as e:
+        frappe.log_error(f"Error in get_user_companies: {str(e)}")
+        return {
+            "companies": [],
+            "success": False,
+            "error": str(e)
+        }
+
+
+@frappe.whitelist()
+def get_user_default_company():
+    """
+    Get the user's default company from their invoice data
+    This ensures we use the same company context as the customer's actual data
+    """
+    try:
+        # Get current user
+        user = frappe.session.user
+        
+        # Try to get company from user's invoices first
+        invoices = frappe.get_all(
+            "Sales Invoice",
+            filters={
+                "docstatus": 1,
+                "owner": user
+            },
+            fields=["company"],
+            limit=1,
+            order_by="creation desc"
+        )
+        
+        if invoices and invoices[0].company:
+            return {
+                "company": invoices[0].company,
+                "success": True
+            }
+        
+        # Fallback: Get first available company
+        companies = frappe.get_all(
+            "Company",
+            fields=["name"],
+            limit=1,
+            order_by="name"
+        )
+        
+        if companies:
+            return {
+                "company": companies[0].name,
+                "success": True
+            }
+        
+        return {
+            "company": None,
+            "success": False,
+            "error": "No company found"
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error in get_user_default_company: {str(e)}")
+        return {
+            "company": None,
+            "success": False,
+            "error": str(e)
+        }

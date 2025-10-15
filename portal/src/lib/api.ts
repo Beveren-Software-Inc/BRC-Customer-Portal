@@ -443,6 +443,31 @@ export async function getCustomerDashboardData(): Promise<any> {
     return null;
   }
 }
+// ---- Invoice Status Summary (server-aggregated) ----
+export interface InvoiceStatusBucket {
+  name: string;
+  value: number;
+  percentage: number;
+  total: number;
+  color: string;
+}
+
+export async function getInvoiceStatusSummary(period: string = "12months"): Promise<{ period: string; buckets: InvoiceStatusBucket[]; total: number } | null> {
+  try {
+    const response = await fetch(`/api/method/sap_customer_portal.api.customer_balance.get_invoice_status_summary?period=${encodeURIComponent(period)}`);
+    const data = await response.json();
+    if (data.message && data.message.success) {
+      return data.message.data;
+    }
+    if (data.message && data.message.data) {
+      return data.message.data;
+    }
+    return null;
+  } catch (e) {
+    console.error("Failed to fetch invoice status summary", e);
+    return null;
+  }
+}
 
 export async function getSapSalesOrders(): Promise<any[]> {
   try {
@@ -623,15 +648,12 @@ export const getUserSessionDefaults = async (): Promise<
  */
 export const getUserCompanies = async (): Promise<string[]> => {
   try {
-    const response = await erpnextApi.get("/resource/Company", {
-      params: {
-        fields: JSON.stringify(["name"]),
-        limit_page_length: 0,
-      },
-    });
+    const response = await erpnextApi.get(
+      "/method/sap_customer_portal.api.customer_balance.get_user_companies"
+    );
 
-    if (response.data?.data) {
-      return response.data.data.map((company: any) => company.name);
+    if (response.data?.message?.success && response.data.message.companies) {
+      return response.data.message.companies.map((company: any) => company.name);
     }
     return [];
   } catch (error) {
@@ -647,21 +669,20 @@ export const getUserCompanies = async (): Promise<string[]> => {
  */
 export const getUserDefaultCompany = async (): Promise<string> => {
   try {
-    console.log("Getting default company from invoice data...");
+    console.log("Getting default company from whitelisted method...");
 
-    // Fetch a small sample of invoices to get the company information
-    const invoices = await getSalesInvoices();
-    console.log("Fetched invoices for company detection:", invoices.length);
+    // Use the whitelisted method to get default company
+    const response = await erpnextApi.get(
+      "/method/sap_customer_portal.api.customer_balance.get_user_default_company"
+    );
 
-    if (invoices.length > 0 && invoices[0].company) {
-      console.log("Found company from invoice data:", invoices[0].company);
-      return invoices[0].company;
+    if (response.data?.message?.success && response.data.message.company) {
+      console.log("Found company from whitelisted method:", response.data.message.company);
+      return response.data.message.company;
     }
 
-    // Fallback: If no invoices or no company field, try getting all companies and use the first one
-    console.log(
-      "No company found in invoices, falling back to company list..."
-    );
+    // Fallback: If no company found, try getting all companies and use the first one
+    console.log("No company found from whitelisted method, falling back to company list...");
     const companies = await getUserCompanies();
     console.log("Available companies:", companies);
 
@@ -763,6 +784,8 @@ export const openCustomerStatementPrintPreview = async (
       }
     );
 
+    console.log("Print preview response:", response.data);
+
     if (response.data?.message?.html_content) {
       // Open the HTML content in a new window for print preview
       const printWindow = window.open(
@@ -780,7 +803,8 @@ export const openCustomerStatementPrintPreview = async (
         );
       }
     } else {
-      throw new Error("Failed to generate print preview content.");
+      console.error("Print preview response missing html_content:", response.data);
+      throw new Error("Failed to generate print preview content. Please check the server logs for more details.");
     }
   } catch (error) {
     console.error("Failed to open print preview:", error);

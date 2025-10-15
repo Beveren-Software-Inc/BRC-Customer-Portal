@@ -393,7 +393,7 @@ export default function CustomerStatementList() {
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
           <div className="bg-blue-50 p-4 rounded-lg">
             <p className="text-sm text-blue-600">{t('Total Invoices')}</p>
-            <p className="text-2xl font-bold text-blue-900">
+            <p className="text-xl font-medium text-blue-900">
               {summary?.total_invoices || 0}
             </p>
             <p className="text-xs text-blue-500">
@@ -402,7 +402,7 @@ export default function CustomerStatementList() {
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
             <p className="text-sm text-green-600">{t('Total Payments')}</p>
-            <p className="text-2xl font-bold text-green-900">
+            <p className="text-xl font-medium text-green-900">
               {summary?.total_payments || 0}
             </p>
             <p className="text-xs text-green-500">
@@ -411,13 +411,13 @@ export default function CustomerStatementList() {
           </div>
           <div className="bg-amber-50 p-4 rounded-lg">
             <p className="text-sm text-amber-600">{t('Opening Balance')}</p>
-            <p className="text-2xl font-bold text-amber-900">
+            <p className="text-xl font-medium text-amber-900">
               {formatCurrency(opening_balance, transactions[0]?.currency || 'SAR')}
             </p>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
             <p className="text-sm text-purple-600">{t('Closing Balance')}</p>
-            <p className="text-2xl font-bold text-purple-900">
+            <p className="text-xl font-medium text-purple-900">
               {formatCurrency(closing_balance, transactions[0]?.currency || 'SAR')}
             </p>
             <p className={`text-xs ${closing_balance >= 0 ? 'text-red-500' : 'text-green-500'}`}>

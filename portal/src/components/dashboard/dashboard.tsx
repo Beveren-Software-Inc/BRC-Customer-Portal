@@ -407,36 +407,38 @@ export default function Dashboard() {
   const erpDeliveriesLen = Array.isArray(deliveryNotes) ? deliveryNotes.length : 0;
   const hasSapSummary = Boolean(sapDashboardData && sapDashboardData.summary);
 
-  // Process dashboard data progressively as sources resolve; guard against unnecessary updates
+  // Process dashboard data progressively as sources resolve; debounce with rAF
   useEffect(() => {
+    let rafId: number | null = null;
     try {
-      setError(null);
+      const run = () => {
+        setError(null);
 
-      // Use SAP data if available, otherwise fall back to ERPNext data
-      let processedData;
-      if (sapDashboardData && sapDashboardData.summary) {
-        // Use SAP data
-        processedData = {
-          invoices: sapDashboardData.invoices || [],
-          salesOrders: sapDashboardData.orders || [],
-          deliveryNotes: sapDashboardData.delivery_notes || [],
-          quotations: [], // SAP doesn't provide quotations in this endpoint
-          summary: sapDashboardData.summary
-        };
-      } else {
-        // Progressive dataset combination: prefer SAP individual datasets, then ERPNext fallbacks
-        const combinedOrders = sapOrdersLen ? sapOrders : (salesOrders || []);
-        const combinedInvoices = sapInvoicesLen ? sapInvoices : (invoices || []);
-        const combinedDeliveries = sapDeliveriesLen ? sapDeliveries : (deliveryNotes || []);
+        // Use SAP data if available, otherwise fall back to ERPNext data
+        let processedData;
+        if (sapDashboardData && sapDashboardData.summary) {
+          // Use SAP data
+          processedData = {
+            invoices: sapDashboardData.invoices || [],
+            salesOrders: sapDashboardData.orders || [],
+            deliveryNotes: sapDashboardData.delivery_notes || [],
+            quotations: [], // SAP doesn't provide quotations in this endpoint
+            summary: sapDashboardData.summary
+          };
+        } else {
+          // Progressive dataset combination: prefer SAP individual datasets, then ERPNext fallbacks
+          const combinedOrders = sapOrdersLen ? sapOrders : (salesOrders || []);
+          const combinedInvoices = sapInvoicesLen ? sapInvoices : (invoices || []);
+          const combinedDeliveries = sapDeliveriesLen ? sapDeliveries : (deliveryNotes || []);
 
-        processedData = {
-          invoices: combinedInvoices,
-          salesOrders: combinedOrders,
-          deliveryNotes: combinedDeliveries,
-          quotations: quotations || [],
-          summary: null
-        };
-      }
+          processedData = {
+            invoices: combinedInvoices,
+            salesOrders: combinedOrders,
+            deliveryNotes: combinedDeliveries,
+            quotations: quotations || [],
+            summary: null
+          };
+        }
 
       // Process data based on source (SAP or ERPNext)
       let undeliveredOrders, unpaidInvoices, unpaidInvoicesTotal, unbilledDeliveries, unbilledDeliveriesTotal;
@@ -547,7 +549,7 @@ export default function Dashboard() {
       // Format summary data with your requested cards
       const summary = [
         {
-          title: "Undelivered Orders",
+          title: "Open Orders",
           value: typeof undeliveredOrders === 'number' ? undeliveredOrders : undeliveredOrders.length,
           count: typeof undeliveredOrders === 'number' ? undeliveredOrders.toString() : undeliveredOrders.length.toString(),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
@@ -555,7 +557,7 @@ export default function Dashboard() {
           textColor: "text-amber-800 dark:text-amber-300",
         },
         {
-          title: "Unbilled Deliveries",
+          title: "Open Deliveries",
           value: unbilledDeliveriesTotal,
           count: typeof unbilledDeliveries === 'number' ? unbilledDeliveries.toString() : unbilledDeliveries.length.toString(),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
@@ -577,15 +579,17 @@ export default function Dashboard() {
         
       ];
 
-      // Only update state if values actually changed to prevent re-render loops
-      const summaryChanged = JSON.stringify(summaryData) !== JSON.stringify(summary);
-      const activitiesChanged = JSON.stringify(recentActivities) !== JSON.stringify(allActivities);
-      if (summaryChanged) {
-        setSummaryData(summary);
-      }
-      if (activitiesChanged) {
-        setRecentActivities(allActivities);
-      }
+        // Only update state if values actually changed to prevent re-render loops
+        const summaryChanged = JSON.stringify(summaryData) !== JSON.stringify(summary);
+        const activitiesChanged = JSON.stringify(recentActivities) !== JSON.stringify(allActivities);
+        if (summaryChanged) {
+          setSummaryData(summary);
+        }
+        if (activitiesChanged) {
+          setRecentActivities(allActivities);
+        }
+      };
+      rafId = window.requestAnimationFrame(run);
     } catch (err: unknown) {
       console.error("Error processing dashboard data:", err);
       // Properly handle unknown error type
@@ -595,6 +599,11 @@ export default function Dashboard() {
         setError("Failed to load dashboard data");
       }
     }
+    return () => {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
   }, [sapOrdersLen, sapInvoicesLen, sapDeliveriesLen, erpOrdersLen, erpInvoicesLen, erpDeliveriesLen, hasSapSummary]);
 
   // Separate effect to handle first load completion
@@ -723,10 +732,10 @@ export default function Dashboard() {
           // Determine click handler and navigation target
           let onClick: (() => void) | undefined = undefined;
           let clickable = false;
-          if (item.title === "Undelivered Orders") {
+          if (item.title === "Open Orders") {
             onClick = () => navigate("/sales-orders", { state: { initialStatus: ["open"] } });
             clickable = true;
-          } else if (item.title === "Unbilled Deliveries") {
+          } else if (item.title === "Open Deliveries") {
             onClick = () => navigate("/delivery-notes", { state: { initialStatus: ["open"] } });
             clickable = true;
           } else if (item.title === "Open Invoices") {
@@ -749,7 +758,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className={`text-xl sm:text-2xl font-bold ${item.textColor}`}>
-                  {item.title === "Open Invoices" || item.title === "Unbilled Deliveries" ? (
+                  {item.title === "Open Invoices" || item.title === "Open Deliveries" ? (
                     <DualCurrencyDisplay amount={item.value} currency={item.currency || currency || "SAR"} />
                   ) : (
                     item.value.toString()
