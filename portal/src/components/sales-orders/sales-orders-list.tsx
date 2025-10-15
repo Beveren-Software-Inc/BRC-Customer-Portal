@@ -69,7 +69,7 @@ export default function SalesOrdersList() {
   } = useQuery<SalesOrder[], Error>({
     queryKey: ["sap-sales-orders"],
     queryFn: getSapSalesOrders,
-    staleTime: 300000,
+    staleTime: 1000 * 60 * 60, // 60 minutes
     refetchOnMount: true,
     retry: 2,
   });

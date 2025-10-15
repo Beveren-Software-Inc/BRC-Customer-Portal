@@ -54,7 +54,7 @@ export default function DeliveryNotesList() {
   } = useQuery<DeliveryNote[], Error>({
     queryKey: ["sap-delivery-notes"],
     queryFn: getSapDeliveryNotes,
-    staleTime: 300000, // 5 minutes
+    staleTime: 1000 * 60 * 60, // 60 minutes
     refetchOnMount: true,
     retry: 2,
   });
