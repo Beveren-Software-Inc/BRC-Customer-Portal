@@ -300,6 +300,128 @@ def get_customer_payments():
         }
 
 @frappe.whitelist()
+def get_customer_gl_statement(from_date=None, to_date=None):
+    """Get customer statement using GL transactions (OJDT/JDT1) from SAP B1
+    
+    This uses the GL approach as suggested by the SAP consultant:
+    - Fetches JournalEntries with JournalEntryLines filtered by customer
+    - Returns raw GL data without calculations (no running balances)
+    - Matches the SQL: SELECT from OJDT a INNER JOIN JDT1 b ON a.TransId = b.TransId INNER JOIN OCRD c ON c.CardCode = b.ShortName WHERE c.CardType = 'C'
+    """
+    try:
+        customer_code = sap_api_utils.get_customer_code_from_user()
+        if not customer_code:
+            return {
+                "error": True,
+                "message": "No customer code found for current user"
+            }
+        
+        if not from_date or not to_date:
+            return {
+                "error": True,
+                "message": "From date and to date are required"
+            }
+        
+        # Get GL transactions from SAP (OJDT/JDT1 approach)
+        gl_transactions = sap_api_utils.get_customer_gl_transactions_from_sap(customer_code, from_date, to_date)
+        
+        if not gl_transactions:
+            return {
+                "error": True,
+                "message": "No GL transactions found for the given date range"
+            }
+        
+        # Convert GL data to statement format (no calculations, just raw data)
+        columns = [
+            {"label": "Date", "fieldname": "date", "fieldtype": "Date", "width": 100},
+            {"label": "Document", "fieldname": "document_number", "fieldtype": "Data", "width": 120},
+            {"label": "Base Ref", "fieldname": "base_ref", "fieldtype": "Data", "width": 150},
+            {"label": "Account", "fieldname": "account_code", "fieldtype": "Data", "width": 100},
+            {"label": "Debit", "fieldname": "debit", "fieldtype": "Currency", "width": 100},
+            {"label": "Credit", "fieldname": "credit", "fieldtype": "Currency", "width": 100},
+            {"label": "Remarks", "fieldname": "remarks", "fieldtype": "Data", "width": 200}
+        ]
+        
+        # Convert GL transactions to statement rows (no running balance calculation)
+        result = []
+        total_debit = 0
+        total_credit = 0
+        
+        for transaction in gl_transactions:
+            debit_amount = transaction.get('debit', 0) or 0
+            credit_amount = transaction.get('credit', 0) or 0
+            
+            total_debit += debit_amount
+            total_credit += credit_amount
+            
+            result.append([
+                transaction.get('date', ''),
+                transaction.get('document_number', ''),
+                transaction.get('base_ref', ''),
+                transaction.get('account_code', ''),
+                debit_amount,
+                credit_amount,
+                transaction.get('remarks', '')
+            ])
+        
+        # Add summary row
+        result.append([
+            "",  # Empty date
+            "PERIOD TOTALS",
+            "",  # Empty base ref
+            "",  # Empty account code
+            total_debit,
+            total_credit,
+            f"Net: {total_debit - total_credit:,.2f}"
+        ])
+        
+        statement_data = {
+            "columns": columns,
+            "result": result,
+            "message": f"GL Statement for Customer {customer_code}",
+            "chart": {},
+            "report_summary": [
+                {
+                    "value": len(gl_transactions),
+                    "label": "Total GL Transactions",
+                    "datatype": "Int"
+                },
+                {
+                    "value": total_debit,
+                    "label": "Total Debits",
+                    "datatype": "Currency"
+                },
+                {
+                    "value": total_credit,
+                    "label": "Total Credits", 
+                    "datatype": "Currency"
+                },
+                {
+                    "value": total_debit - total_credit,
+                    "label": "Net Amount",
+                    "datatype": "Currency"
+                }
+            ],
+            "customer_code": customer_code,
+            "from_date": from_date,
+            "to_date": to_date,
+            "data_source": "GL_OJDT_JDT1"
+        }
+        
+        return {
+            "success": True,
+            "data": statement_data
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error in get_customer_gl_statement: {str(e)}")
+        return {
+            "error": True,
+            "message": f"Failed to fetch GL statement: {str(e)}"
+        }
+
+
+@frappe.whitelist()
 def get_customer_statement_from_sap(from_date=None, to_date=None):
     """Get customer statement directly from SAP B1"""
     try:

@@ -819,7 +819,7 @@ export const openCustomerStatementPrintPreview = async (
 };
 
 /**
- * Get Customer Statement data for preview (without download)
+ * Get Customer Statement data using GL transactions (OJDT/JDT1) for preview
  */
 export const getSapCustomerStatement = async (
   fromDate: string,
@@ -827,7 +827,7 @@ export const getSapCustomerStatement = async (
 ): Promise<any> => {
   try {
     const response = await fetch(
-      `/api/method/sap_customer_portal.api.customer_balance.get_customer_statement_from_sap`,
+      `/api/method/sap_customer_portal.api.customer_balance.get_customer_gl_statement`,
       {
         method: "POST",
         headers: {
@@ -842,15 +842,16 @@ export const getSapCustomerStatement = async (
     );
 
     const data = await response.json();
+    console.log("[DEBUG] GL Customer statement response:", data);
     
     if (data.message && data.message.success) {
       return data.message.data;
     } else {
-      console.error("Error fetching customer statement from SAP:", data.message?.message);
-      throw new Error(data.message?.message || "Failed to fetch customer statement");
+      console.error("Error fetching GL customer statement:", data.message?.message);
+      throw new Error(data.message?.message || "Failed to fetch GL customer statement");
     }
   } catch (error) {
-    console.error("Error fetching customer statement:", error);
+    console.error("Error fetching GL customer statement:", error);
     throw error;
   }
 };

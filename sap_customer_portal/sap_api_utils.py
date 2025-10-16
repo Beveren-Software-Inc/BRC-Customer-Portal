@@ -1119,7 +1119,7 @@ def get_customer_code_from_user():
     # Check if user is Administrator or has system roles
     roles = frappe.get_roles(current_user)
     if current_user == "Administrator" or "System Manager" in roles:
-        return "CF342"  # Default customer code as mentioned in the request
+        return "F103011"  # Default customer code as mentioned in the request
     
     # For portal users, get their linked customer
     try:
@@ -1136,6 +1136,145 @@ def get_customer_code_from_user():
         frappe.logger().error(f"Error getting customer code for user {current_user}: {str(e)}")
     
     return None
+
+
+def get_customer_gl_transactions_from_sap(customer_code, from_date, to_date, limit=100000000):
+    """Fetch raw GL transactions (OJDT/JDT1) for a specific customer via Service Layer.
+    
+    Based on the SQL: 
+    SELECT c."CardCode", c."CardName", b."BaseRef", b."TransType", b."RefDate", b."LineMemo", b."Debit", b."Credit"
+    FROM OJDT a INNER JOIN JDT1 b ON a."TransId" = b."TransId" INNER JOIN OCRD c ON c."CardCode" = b."ShortName"
+    WHERE c."CardType" = 'C' AND c."CardCode" = '{customer_code}'
+    
+    Returns a flat list of GL lines for the specific customer only.
+    """
+    try:
+        cache_key = f"gl_txn_{customer_code}_{from_date}_{to_date}_{limit}"
+        cached = get_cached_data(cache_key)
+        if cached is not None:
+            return cached
+
+        all_lines = []
+        skip = 0
+        batch_size = 20  # SAP Service Layer default page size
+        max_batches = (limit // batch_size) + 1
+
+        # Build params to fetch JournalEntries with their child JournalEntryLines
+        # Use $select to include JournalEntryLines instead of $expand
+        def build_params():
+            return {
+                # '$filter': f"ReferenceDate ge '{from_date}' and ReferenceDate le '{to_date}'",
+                '$select': 'Number,ReferenceDate,Memo,TransactionCode,JournalEntryLines',
+                '$orderby': 'ReferenceDate asc',
+                '$top': batch_size,
+                '$skip': skip,
+            }
+        print(f"[GL] Fetching GL transactions for customer {customer_code} from {from_date} to {to_date}")
+        print(f"[GL] Batch size: {batch_size}, Max batches: {max_batches}, Limit: {limit}")
+        
+        # First, let's check the total count
+        count_params = {
+            '$select': 'Number',
+            '$count': 'true'
+        }
+        print(f"[GL] Checking total count with params: {count_params}")
+        count_data = fetch_sap_data_with_session('JournalEntries', count_params, None)
+        print(f"[GL] Count result: {count_data}")
+        
+        for batch_num in range(max_batches):
+            params = build_params()
+            print(f"[GL] Batch {batch_num + 1} - Query params: {params}")
+            data = fetch_sap_data_with_session('JournalEntries', params, None)
+            print(f"[GL] Batch {batch_num + 1} - Query result type: {type(data)}")
+            
+            if data:
+                if isinstance(data, dict) and 'value' in data:
+                    entries = data['value'] or []
+                    print(f"[GL] Batch {batch_num + 1} - Found {len(entries)} journal entries")
+                    # Check for next link
+                    if '@odata.nextLink' in data:
+                        print(f"[GL] Batch {batch_num + 1} - Has next link: {data['@odata.nextLink']}")
+                    else:
+                        print(f"[GL] Batch {batch_num + 1} - No next link (last page)")
+                elif isinstance(data, list):
+                    entries = data
+                    print(f"[GL] Batch {batch_num + 1} - Found {len(entries)} journal entries (list)")
+                else:
+                    entries = []
+                    print(f"[GL] Batch {batch_num + 1} - No entries found")
+            else:
+                entries = []
+                print(f"[GL] Batch {batch_num + 1} - Data is None")
+            
+            if not entries:
+                print(f"[GL] Batch {batch_num + 1} - No entries, breaking pagination")
+                break
+            
+            # Check if this is the last page (no next link)
+            if isinstance(data, dict) and '@odata.nextLink' not in data:
+                print(f"[GL] Batch {batch_num + 1} - No next link, this is the last page")
+                is_last_page = True
+            else:
+                is_last_page = False
+
+            for je in entries:
+                header_date = je.get('ReferenceDate')
+                header_number = je.get('Number')
+                header_memo = je.get('Memo', '')
+                header_trx_code = je.get('TransactionCode', '')
+                lines = je.get('JournalEntryLines') or []
+                
+                print(f"Processing JE {header_number} with {len(lines)} lines")
+                
+                for ln in lines:
+                    short_name = ln.get('ShortName')
+                    print(f"Line ShortName: {short_name}, Looking for: {customer_code}")
+                    
+                    # Double-check: Only include lines for this specific customer
+                    # ShortName in JDT1 = CardCode in OCRD (customer code)
+                    if short_name != customer_code:
+                        continue
+                        
+                    print(f"Found matching line for customer {customer_code}")
+                    all_lines.append({
+                        'date': ln.get('ReferenceDate1') or header_date,
+                        'document_type': 'GL',
+                        'document_number': header_number,
+                        'base_ref': ln.get('Reference1'),
+                        'account_code': ln.get('AccountCode'),
+                        'debit': ln.get('Debit', 0) or 0,
+                        'credit': ln.get('Credit', 0) or 0,
+                        'remarks': (ln.get('LineMemo') or header_memo or ''),
+                        'transaction_code': header_trx_code,
+                        'customer_code': customer_code,  # Add for verification
+                    })
+
+            if len(all_lines) >= limit:
+                print(f"[GL] Reached limit of {limit} lines, stopping")
+                break
+            
+            # Stop if this is the last page
+            if is_last_page:
+                print(f"[GL] Reached last page, stopping pagination")
+                break
+                
+            skip += batch_size
+            print(f"[GL] Moving to next batch, skip = {skip}")
+
+        all_lines = all_lines[:limit]
+        # Sort by date, then by document number, then by base_ref to match SQL ordering
+        all_lines.sort(key=lambda x: (
+            x.get('date') or '1900-01-01', 
+            str(x.get('document_number') or ''), 
+            str(x.get('base_ref') or '')
+        ))
+
+        set_cached_data(cache_key, all_lines)
+        frappe.logger().info(f"[GL] Fetched {len(all_lines)} GL transactions for customer {customer_code}")
+        return all_lines
+    except Exception as e:
+        frappe.logger().error(f"Error fetching GL transactions from SAP for customer {customer_code}: {str(e)}")
+        return []
 
 
 def get_customer_codes_from_user():
