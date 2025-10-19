@@ -31,7 +31,7 @@ import { useApi } from "@/hooks/useApi";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, Link } from "react-router-dom";
-import { getMonthlySalesOrderStats, MonthlySalesOrderStat, getCustomerDashboardData } from "@/lib/api";
+import { getMonthlySalesOrderStats, MonthlySalesOrderStat, getCustomerDashboardData, getSapSalesOrders, getSapInvoices, getSapDeliveryNotes, getSapCustomerPayments } from "@/lib/api";
 import { getCustomerBalance } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import CustomerAging from "../sales-invoices/customer_ageing";
@@ -150,7 +150,7 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ["sap-dashboard-data"],
     queryFn: getCustomerDashboardData,
-    staleTime: 300000, // 5 minutes
+    staleTime: 1000 * 60 * 60, // 60 minutes
     refetchOnMount: true,
     retry: 2,
   });
@@ -164,10 +164,46 @@ export default function Dashboard() {
   } = useQuery({
     queryKey: ["sap-customer-balance"],
     queryFn: getCustomerBalance,
-    staleTime: 300000,
+    staleTime: 1000 * 60 * 60, // 60 minutes
     refetchOnMount: true,
     retry: 2,
   });
+
+  // Fetch SAP datasets individually to enable progressive summary updates
+  const { data: sapOrders = [], isLoading: sapOrdersLoading, isError: sapOrdersError } = useQuery({
+    queryKey: ["sap-sales-orders-dashboard"],
+    queryFn: getSapSalesOrders,
+    staleTime: 1000 * 60 * 60, // 60 minutes
+    refetchOnMount: true,
+    retry: 2,
+  });
+  const { data: sapDeliveries = [], isLoading: sapDeliveriesLoading, isError: sapDeliveriesError } = useQuery({
+    queryKey: ["sap-delivery-notes-dashboard"],
+    queryFn: getSapDeliveryNotes,
+    staleTime: 1000 * 60 * 60, // 60 minutes
+    refetchOnMount: true,
+    retry: 2,
+    enabled: sapOrdersLoading === false, // start after orders settle
+  });
+  const { data: sapInvoices = [], isLoading: sapInvoicesLoading, isError: sapInvoicesError } = useQuery({
+    queryKey: ["sap-invoices-dashboard"],
+    queryFn: getSapInvoices,
+    staleTime: 1000 * 60 * 60, // 60 minutes
+    refetchOnMount: true,
+    retry: 2,
+    enabled: sapDeliveriesLoading === false, // start after deliveries settle
+  });
+
+  // Background prefetch of payments once invoices have settled
+  useEffect(() => {
+    if (sapInvoicesLoading === false) {
+      queryClient.prefetchQuery({
+        queryKey: ["sap-payments"],
+        queryFn: getSapCustomerPayments,
+        staleTime: 1000 * 60 * 60,
+      }).catch(() => {});
+    }
+  }, [sapInvoicesLoading, queryClient]);
 
   // Extract SAP data from dashboard data using useMemo to prevent infinite loops
   const { salesOrders, invoices, deliveryNotes, quotations, ordersLoading, invoicesLoading, deliveriesLoading, quotationsLoading, ordersError, invoicesError, deliveriesError, quotationsError, refetchOrders, refetchInvoices, refetchDeliveries, refetchQuotations } = useMemo(() => {
@@ -362,48 +398,47 @@ export default function Dashboard() {
     []
   );
 
-  // Process dashboard data once everything is loaded
+  // Primitive keys to avoid effect thrashing on new array identities
+  const sapOrdersLen = Array.isArray(sapOrders) ? sapOrders.length : 0;
+  const sapInvoicesLen = Array.isArray(sapInvoices) ? sapInvoices.length : 0;
+  const sapDeliveriesLen = Array.isArray(sapDeliveries) ? sapDeliveries.length : 0;
+  const erpOrdersLen = Array.isArray(salesOrders) ? salesOrders.length : 0;
+  const erpInvoicesLen = Array.isArray(invoices) ? invoices.length : 0;
+  const erpDeliveriesLen = Array.isArray(deliveryNotes) ? deliveryNotes.length : 0;
+  const hasSapSummary = Boolean(sapDashboardData && sapDashboardData.summary);
+
+  // Process dashboard data progressively as sources resolve; debounce with rAF
   useEffect(() => {
-    // Only process data when all data is loaded
-    if (loading || sapDataLoading) {
-      // Don't update state while loading
-      return;
-    }
-
+    let rafId: number | null = null;
     try {
-      setError(null);
+      const run = () => {
+        setError(null);
 
-      // Use SAP data if available, otherwise fall back to ERPNext data
-      let processedData;
-      if (sapDashboardData && sapDashboardData.summary) {
-        // Use SAP data
-        processedData = {
-          invoices: sapDashboardData.invoices || [],
-          salesOrders: sapDashboardData.orders || [],
-          deliveryNotes: sapDashboardData.delivery_notes || [],
-          quotations: [], // SAP doesn't provide quotations in this endpoint
-          summary: sapDashboardData.summary
-        };
-      } else {
-        // Fall back to ERPNext data
-        const hasAnyData =
-          (Array.isArray(salesOrders) && salesOrders.length > 0) ||
-          (Array.isArray(invoices) && invoices.length > 0) ||
-          (Array.isArray(quotations) && quotations.length > 0) ||
-          (Array.isArray(deliveryNotes) && deliveryNotes.length > 0);
+        // Use SAP data if available, otherwise fall back to ERPNext data
+        let processedData;
+        if (sapDashboardData && sapDashboardData.summary) {
+          // Use SAP data
+          processedData = {
+            invoices: sapDashboardData.invoices || [],
+            salesOrders: sapDashboardData.orders || [],
+            deliveryNotes: sapDashboardData.delivery_notes || [],
+            quotations: [], // SAP doesn't provide quotations in this endpoint
+            summary: sapDashboardData.summary
+          };
+        } else {
+          // Progressive dataset combination: prefer SAP individual datasets, then ERPNext fallbacks
+          const combinedOrders = sapOrdersLen ? sapOrders : (salesOrders || []);
+          const combinedInvoices = sapInvoicesLen ? sapInvoices : (invoices || []);
+          const combinedDeliveries = sapDeliveriesLen ? sapDeliveries : (deliveryNotes || []);
 
-        if (!hasAnyData) {
-          return;
+          processedData = {
+            invoices: combinedInvoices,
+            salesOrders: combinedOrders,
+            deliveryNotes: combinedDeliveries,
+            quotations: quotations || [],
+            summary: null
+          };
         }
-
-        processedData = {
-          invoices: invoices || [],
-          salesOrders: salesOrders || [],
-          deliveryNotes: deliveryNotes || [],
-          quotations: quotations || [],
-          summary: null
-        };
-      }
 
       // Process data based on source (SAP or ERPNext)
       let undeliveredOrders, unpaidInvoices, unpaidInvoicesTotal, unbilledDeliveries, unbilledDeliveriesTotal;
@@ -417,9 +452,11 @@ export default function Dashboard() {
         unbilledDeliveriesTotal = processedData.summary.unbilled_total || 0;
       } else {
         // Process ERPNext data (fallback)
-        undeliveredOrders = processedData.salesOrders.filter(
-          (order) => order.status === "To Deliver and Bill"
-        );
+        // For SAP orders, treat status !== 'Closed' as undelivered/open
+        undeliveredOrders = processedData.salesOrders.filter((order: any) => {
+          const status = String(order.status || '').toLowerCase();
+          return status === 'to deliver and bill' || status === 'open' || status === 'to deliver';
+        });
 
         unpaidInvoices = processedData.invoices.filter(
           (invoice) => {
@@ -512,7 +549,7 @@ export default function Dashboard() {
       // Format summary data with your requested cards
       const summary = [
         {
-          title: "Undelivered Orders",
+          title: "Open Orders",
           value: typeof undeliveredOrders === 'number' ? undeliveredOrders : undeliveredOrders.length,
           count: typeof undeliveredOrders === 'number' ? undeliveredOrders.toString() : undeliveredOrders.length.toString(),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
@@ -520,7 +557,7 @@ export default function Dashboard() {
           textColor: "text-amber-800 dark:text-amber-300",
         },
         {
-          title: "Unbilled Deliveries",
+          title: "Open Deliveries",
           value: unbilledDeliveriesTotal,
           count: typeof unbilledDeliveries === 'number' ? unbilledDeliveries.toString() : unbilledDeliveries.length.toString(),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
@@ -542,8 +579,17 @@ export default function Dashboard() {
         
       ];
 
-      setSummaryData(summary);
-      setRecentActivities(allActivities);
+        // Only update state if values actually changed to prevent re-render loops
+        const summaryChanged = JSON.stringify(summaryData) !== JSON.stringify(summary);
+        const activitiesChanged = JSON.stringify(recentActivities) !== JSON.stringify(allActivities);
+        if (summaryChanged) {
+          setSummaryData(summary);
+        }
+        if (activitiesChanged) {
+          setRecentActivities(allActivities);
+        }
+      };
+      rafId = window.requestAnimationFrame(run);
     } catch (err: unknown) {
       console.error("Error processing dashboard data:", err);
       // Properly handle unknown error type
@@ -553,7 +599,12 @@ export default function Dashboard() {
         setError("Failed to load dashboard data");
       }
     }
-  }, [salesOrders, invoices, quotations, deliveryNotes, loading, sapDashboardData, sapDataLoading]);
+    return () => {
+      if (rafId !== null) {
+        window.cancelAnimationFrame(rafId);
+      }
+    };
+  }, [sapOrdersLen, sapInvoicesLen, sapDeliveriesLen, erpOrdersLen, erpInvoicesLen, erpDeliveriesLen, hasSapSummary]);
 
   // Separate effect to handle first load completion
   useEffect(() => {
@@ -569,17 +620,8 @@ export default function Dashboard() {
     }
   }, [ordersError, invoicesError, quotationsError, deliveriesError]);
 
-  // Special combined loading state to handle initial load
+  // Special combined loading state (no longer blocks whole page)
   const isLoading = loading || isFirstLoad;
-
-  if (isLoading) {
-    return (
-      <div className="w-full h-full flex flex-col items-center justify-center min-h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground mb-4" />
-        <p className="text-muted-foreground">{t('Loading dashboard data...')}</p>
-      </div>
-    );
-  }
 
   if (error) {
     return (
@@ -620,7 +662,7 @@ export default function Dashboard() {
   return (
     <div className="flex flex-col gap-6 w-full">
       {/* Empty state for no data at all */}
-      {hasNoData && (
+      {/* {hasNoData && (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-16">
             <div className="bg-yellow-50 p-5 rounded-full mb-6">
@@ -638,7 +680,7 @@ export default function Dashboard() {
             </Button>
           </CardContent>
         </Card>
-      )}
+      )} */}
 
       {/* Debug components removed per request */}
 
@@ -647,16 +689,53 @@ export default function Dashboard() {
         {/* Customer Balance as a first card to align sizes */}
         <CustomerBalanceCard 
           customerBalance={sapCustomerBalance || null}
-          loading={sapDataLoading || sapBalanceLoading}
+          loading={sapBalanceLoading}
         />
+        {sapDataLoading && summaryData.length === 0 && (
+          <>
+            <Card className="border-none">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  <div className="h-4 w-32 bg-muted rounded" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-7 w-16 bg-muted rounded mb-2" />
+                <div className="h-3 w-20 bg-muted rounded" />
+              </CardContent>
+            </Card>
+            <Card className="border-none hidden sm:block">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  <div className="h-4 w-32 bg-muted rounded" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-7 w-16 bg-muted rounded mb-2" />
+                <div className="h-3 w-20 bg-muted rounded" />
+              </CardContent>
+            </Card>
+            <Card className="border-none hidden lg:block">
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm font-medium">
+                  <div className="h-4 w-32 bg-muted rounded" />
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="h-7 w-16 bg-muted rounded mb-2" />
+                <div className="h-3 w-20 bg-muted rounded" />
+              </CardContent>
+            </Card>
+          </>
+        )}
         {summaryData.map((item) => {
           // Determine click handler and navigation target
           let onClick: (() => void) | undefined = undefined;
           let clickable = false;
-          if (item.title === "Undelivered Orders") {
+          if (item.title === "Open Orders") {
             onClick = () => navigate("/sales-orders", { state: { initialStatus: ["open"] } });
             clickable = true;
-          } else if (item.title === "Unbilled Deliveries") {
+          } else if (item.title === "Open Deliveries") {
             onClick = () => navigate("/delivery-notes", { state: { initialStatus: ["open"] } });
             clickable = true;
           } else if (item.title === "Open Invoices") {
@@ -679,7 +758,7 @@ export default function Dashboard() {
               </CardHeader>
               <CardContent>
                 <div className={`text-xl sm:text-2xl font-bold ${item.textColor}`}>
-                  {item.title === "Open Invoices" || item.title === "Unbilled Deliveries" ? (
+                  {item.title === "Open Invoices" || item.title === "Open Deliveries" ? (
                     <DualCurrencyDisplay amount={item.value} currency={item.currency || currency || "SAR"} />
                   ) : (
                     item.value.toString()

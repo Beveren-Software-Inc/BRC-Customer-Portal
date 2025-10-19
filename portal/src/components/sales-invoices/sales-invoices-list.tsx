@@ -56,7 +56,7 @@ export default function InvoicesList() {
   } = useQuery<SalesInvoice[], Error>({
     queryKey: ["sap-invoices"],
     queryFn: getSapInvoices,
-    staleTime: 300000, // 5 minutes
+    staleTime: 1000 * 60 * 60, // 60 minutes
     refetchOnMount: true,
     retry: 2,
   });

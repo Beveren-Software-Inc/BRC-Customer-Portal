@@ -19,7 +19,7 @@ export default function PaymentDetail() {
   const { data: payments = [], isLoading, isError } = useQuery<any[], Error>({
     queryKey: ["sap-payments"],
     queryFn: getSapCustomerPayments,
-    staleTime: 300000,
+    staleTime: 1000 * 60 * 60, // 60 minutes
     refetchOnMount: true,
     retry: 2,
   })

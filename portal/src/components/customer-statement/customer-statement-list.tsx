@@ -308,7 +308,7 @@ export default function CustomerStatementList() {
       );
     }
 
-    const { transactions, customer_name, opening_balance, closing_balance, summary } = statementData;
+    const { transactions, summary, customer_name, opening_balance, closing_balance } = statementData;
 
     if (!transactions || transactions.length === 0) {
       return (
@@ -320,13 +320,18 @@ export default function CustomerStatementList() {
     }
 
     // Debug: Log the data structure to understand what we're working with
-    console.log("SAP Statement data:", { transactions, customer_name, opening_balance, closing_balance });
+    console.log("Customer Statement data:", { transactions, summary, customer_name, opening_balance, closing_balance });
     console.log("First transaction:", transactions[0]);
 
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="text-lg font-medium">{t('Statement Preview')}</h3>
+          <h3 className="text-lg font-medium">
+            {t('Customer Statement Preview')} 
+            <span className="text-sm text-muted-foreground ml-2">
+              ({customer_name || 'Customer'})
+            </span>
+          </h3>
           <div className="text-sm text-muted-foreground">
             {transactions.length} {t('transaction', { count: transactions.length })} {t('found')}
           </div>
@@ -338,47 +343,45 @@ export default function CustomerStatementList() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[100px]">Date</TableHead>
-                  <TableHead className="w-[120px]">Type</TableHead>
-                  <TableHead className="w-[120px]">Number</TableHead>
-                  <TableHead className="min-w-[200px]">Description</TableHead>
+                  <TableHead className="w-[120px]">Document Type</TableHead>
+                  <TableHead className="w-[150px]">Document Number</TableHead>
                   <TableHead className="w-[100px] text-right">Debit</TableHead>
                   <TableHead className="w-[100px] text-right">Credit</TableHead>
-                  <TableHead className="w-[120px] text-right">Balance</TableHead>
-                  <TableHead className="w-[100px]">Status</TableHead>
+                  <TableHead className="w-[100px] text-right">Balance</TableHead>
+                  <TableHead className="min-w-[200px]">Remarks</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {transactions.map((transaction: any, index: number) => (
-                  <TableRow key={index}>
-                    <TableCell className="font-medium">
-                      {formatDate(transaction.date)}
-                    </TableCell>
-                    <TableCell>{transaction.document_type}</TableCell>
-                    <TableCell>{transaction.document_number}</TableCell>
-                    <TableCell className="max-w-xs truncate">
-                      {transaction.description}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {transaction.debit > 0 ? formatCurrency(transaction.debit, transaction.currency) : '-'}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {transaction.credit > 0 ? formatCurrency(transaction.credit, transaction.currency) : '-'}
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {formatCurrency(transaction.balance, transaction.currency)}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={
-                        transaction.status === 'Completed' ? 'default' : 
-                        transaction.status === 'Cancelled' ? 'destructive' : 
-                        transaction.status === 'Balance' ? 'outline' : 
-                        'secondary'
-                      }>
-                        {transaction.status}
-                      </Badge>
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {transactions.map((transaction: any, index: number) => {
+                  const isInvoice = transaction.document_type === 'Sales Invoice';
+                  const isPayment = transaction.document_type === 'Payment';
+                  
+                  return (
+                    <TableRow key={index} className={isPayment ? 'bg-green-50 dark:bg-green-900/20' : ''}>
+                      <TableCell className="font-medium">
+                        {transaction.date ? formatDate(transaction.date) : ''}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={isInvoice ? 'default' : 'secondary'}>
+                          {transaction.document_type || ''}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{transaction.document_number || ''}</TableCell>
+                      <TableCell className="text-right">
+                        {transaction.debit && transaction.debit > 0 ? formatCurrency(transaction.debit, transaction.currency || 'SAR') : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {transaction.credit && transaction.credit > 0 ? formatCurrency(transaction.credit, transaction.currency || 'SAR') : '-'}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(transaction.balance || 0, transaction.currency || 'SAR')}
+                      </TableCell>
+                      <TableCell className="max-w-xs truncate">
+                        {transaction.remarks || ''}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </div>
@@ -389,39 +392,39 @@ export default function CustomerStatementList() {
           )}
         </div>
 
-        {/* Statement Summary */}
+        {/* Customer Statement Summary */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
           <div className="bg-blue-50 p-4 rounded-lg">
-            <p className="text-sm text-blue-600">{t('Total Invoices')}</p>
-            <p className="text-2xl font-bold text-blue-900">
-              {summary?.total_invoices || 0}
-            </p>
-            <p className="text-xs text-blue-500">
-              {formatCurrency(summary?.total_invoice_amount || 0, transactions[0]?.currency || 'SAR')}
+            <p className="text-sm text-blue-600">{t('Total Transactions')}</p>
+            <p className="text-xl font-medium text-blue-900">
+              {summary?.total_transactions || 0}
             </p>
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
-            <p className="text-sm text-green-600">{t('Total Payments')}</p>
-            <p className="text-2xl font-bold text-green-900">
-              {summary?.total_payments || 0}
+            <p className="text-sm text-green-600">{t('Total Invoices')}</p>
+            <p className="text-xl font-medium text-green-900">
+              {formatCurrency(summary?.total_invoice_amount || 0, 'SAR')}
             </p>
-            <p className="text-xs text-green-500">
-              {formatCurrency(summary?.total_payment_amount || 0, transactions[0]?.currency || 'SAR')}
-            </p>
-          </div>
-          <div className="bg-amber-50 p-4 rounded-lg">
-            <p className="text-sm text-amber-600">{t('Opening Balance')}</p>
-            <p className="text-2xl font-bold text-amber-900">
-              {formatCurrency(opening_balance, transactions[0]?.currency || 'SAR')}
+            <p className="text-xs text-green-600">
+              {summary?.total_invoices || 0} {t('invoice', { count: summary?.total_invoices || 0 })}
             </p>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
-            <p className="text-sm text-purple-600">{t('Closing Balance')}</p>
-            <p className="text-2xl font-bold text-purple-900">
-              {formatCurrency(closing_balance, transactions[0]?.currency || 'SAR')}
+            <p className="text-sm text-purple-600">{t('Total Payments')}</p>
+            <p className="text-xl font-medium text-purple-900">
+              {formatCurrency(summary?.total_payment_amount || 0, 'SAR')}
             </p>
-            <p className={`text-xs ${closing_balance >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-              {closing_balance >= 0 ? t('Amount Due') : t('Credit Balance')}
+            <p className="text-xs text-purple-600">
+              {summary?.total_payments || 0} {t('payment', { count: summary?.total_payments || 0 })}
+            </p>
+          </div>
+          <div className="bg-orange-50 p-4 rounded-lg">
+            <p className="text-sm text-orange-600">{t('Closing Balance')}</p>
+            <p className="text-xl font-medium text-orange-900">
+              {formatCurrency(closing_balance || 0, 'SAR')}
+            </p>
+            <p className={`text-xs ${(closing_balance || 0) >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {(closing_balance || 0) >= 0 ? t('Amount Due') : t('Credit Balance')}
             </p>
           </div>
         </div>

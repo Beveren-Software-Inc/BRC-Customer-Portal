@@ -1,187 +1,6 @@
 import frappe
 from frappe import _
-from frappe.query_builder import DocType
-from frappe.utils import get_datetime, getdate
-
-
-@frappe.whitelist()
-def get_customer_statement_data(customer=None, from_date=None, to_date=None, company=None):
-    """
-    Get customer statement data using General Ledger report
-    This is a whitelisted method that customers can access through the portal
-    
-    Args:
-        customer (str): Customer ID to get statement for
-        from_date (str): Start date for the statement
-        to_date (str): End date for the statement  
-        company (str): Company (optional, will be determined automatically if not provided)
-    
-    Returns:
-        dict: Statement data with columns and result
-    """
-    try:
-        # Validate required parameters
-        if not customer:
-            frappe.throw(_("Customer is required"))
-        if not from_date or not to_date:
-            frappe.throw(_("From date and to date are required"))
-            
-        # Validate date format and range
-        try:
-            from_date = getdate(from_date)
-            to_date = getdate(to_date)
-        except Exception:
-            frappe.throw(_("Invalid date format"))
-            
-        if from_date > to_date:
-            frappe.throw(_("From date cannot be later than to date"))
-        
-        # Get company from customer's invoices if not provided
-        if not company:
-            company = get_customer_company(customer)
-            
-        # Validate that the current user has access to this customer's data
-        validate_customer_access(customer)
-        
-        # Instead of using the General Ledger report, build the query manually
-        # This gives us full control and avoids permission issues
-        
-        # Get GL entries for the customer within the date range
-        gl_entries = frappe.get_all(
-            "GL Entry",
-            filters={
-                "party_type": "Customer",
-                "party": customer,
-                "company": company,
-                "posting_date": ["between", [from_date, to_date]],
-                "is_cancelled": 0
-            },
-            fields=[
-                "posting_date",
-                "account",
-                "voucher_type", 
-                "voucher_no",
-                "debit",
-                "credit",
-                "against",
-                "remarks",
-                "party",
-                "party_type",
-                "account_currency",
-                "debit_in_account_currency",
-                "credit_in_account_currency"
-            ],
-            order_by="posting_date, creation"
-        )
-        
-        # Define columns with user-friendly names like GL Report
-        columns = [
-            {"label": "Date", "fieldname": "posting_date", "fieldtype": "Date", "width": 100},
-            {"label": "Ref Document", "fieldname": "voucher_type", "fieldtype": "Data", "width": 120},
-            {"label": "Ref ID", "fieldname": "voucher_no", "fieldtype": "Dynamic Link", "width": 150},
-            {"label": "Debit", "fieldname": "debit", "fieldtype": "Currency", "width": 100},
-            {"label": "Credit", "fieldname": "credit", "fieldtype": "Currency", "width": 100},
-            {"label": "Balance", "fieldname": "balance", "fieldtype": "Currency", "width": 100},
-            {"label": "Remarks", "fieldname": "remarks", "fieldtype": "Data", "width": 200}
-        ]
-        
-        # Calculate opening balance (transactions before from_date)
-        opening_entries = frappe.get_all(
-            "GL Entry",
-            filters={
-                "party_type": "Customer",
-                "party": customer,
-                "company": company,
-                "posting_date": ["<", from_date],
-                "is_cancelled": 0
-            },
-            fields=["debit", "credit"]
-        )
-        
-        opening_balance = 0
-        for entry in opening_entries:
-            opening_balance += (entry.debit or 0) - (entry.credit or 0)
-        
-        # Calculate running balance and format data
-        result = []
-        running_balance = opening_balance
-        
-        # Process GL entries
-        for entry in gl_entries:
-            running_balance += (entry.debit or 0) - (entry.credit or 0)
-            
-            # Format remarks - split payment entries into two clean lines
-            remarks = entry.remarks or ""
-            if " against " in remarks and " received from " in remarks:
-                # Example input: "Amount SAR 90562.5 received from F100102 Amount SAR 90562.5 against Sales Invoice 24200097"
-                # Expected output: 
-                # Line 1: "Amount SAR 90562.5 received from F100102"
-                # Line 2: "Amount SAR 90562.5 against Sales Invoice 24200097"
-                
-                # Find the second occurrence of "Amount" to split properly
-                first_amount_index = remarks.find("Amount")
-                if first_amount_index >= 0:
-                    # Look for the second "Amount" after the first one
-                    second_amount_index = remarks.find("Amount", first_amount_index + 1)
-                    if second_amount_index >= 0:
-                        # Split at the second "Amount"
-                        first_line = remarks[:second_amount_index].strip()
-                        second_line = remarks[second_amount_index:].strip()
-                        
-                        remarks = f"{first_line}\n{second_line}"
-            
-            result.append([
-                entry.posting_date,
-                entry.voucher_type,
-                entry.voucher_no,
-                entry.debit or 0,
-                entry.credit or 0,
-                running_balance,
-                remarks
-            ])
-        
-        # Add closing balance row (always show)
-        result.append([
-            "",  # Empty date
-            "Closing Balance",
-            "",  # Empty ref id
-            "",  # Empty debit
-            "",  # Empty credit
-            running_balance,
-            ""   # Empty remarks
-        ])
-        
-        print('\n\n\n CUSTOMER STATEMENT RESULT\n', {
-            "columns": len(columns),
-            "rows": len(result),
-            "customer": customer,
-            "company": company
-        }, '\n\n\n')
-        
-        return {
-            "columns": columns,
-            "result": result,
-            "message": f"Customer Statement for {customer}",
-            "chart": {},
-            "report_summary": [
-                {
-                    "value": len(result),
-                    "label": "Total Transactions",
-                    "datatype": "Int"
-                },
-                {
-                    "value": running_balance,
-                    "label": "Closing Balance",
-                    "datatype": "Currency"
-                }
-            ]
-        }
-        
-    except frappe.PermissionError:
-        frappe.throw(_("You don't have permission to access this customer's data"))
-    except Exception as e:
-        frappe.log_error(f"Error in get_customer_statement_data: {str(e)}")
-        frappe.throw(_("Failed to fetch customer statement data. Please try again or contact support."))
+from frappe.utils import getdate
 
 
 def get_customer_company(customer):
@@ -347,15 +166,87 @@ def download_customer_statement(customer=None, from_date=None, to_date=None, com
         # Validate customer access
         validate_customer_access(customer)
         
-        # Get statement data using our existing function
-        statement_data = get_customer_statement_data(customer, from_date, to_date, company)
+        # Get statement data using SAP data for consistency with preview
+        # This ensures downloads show the same chronological order as the preview
+        from sap_customer_portal.sap_api_utils import get_customer_statement_from_sap, get_customer_code_from_user
         
-        if not statement_data or not statement_data.get("result"):
+        # Get customer code for SAP lookup
+        customer_code = None
+        try:
+            customer_code = get_customer_code_from_user()
+        except:
+            # Fallback: try to get customer code from customer parameter
+            customer_code = customer
+        
+        if not customer_code:
+            frappe.throw(_("Unable to determine customer code for SAP lookup"))
+        
+        # Get SAP statement data
+        sap_statement_data = get_customer_statement_from_sap(customer_code, from_date, to_date)
+        
+        if not sap_statement_data:
             frappe.throw(_("No data found for the given date range"))
         
-        # Create export data
-        columns = statement_data.get("columns", [])
-        result = statement_data.get("result", [])
+        # Convert SAP data to the expected format for downloads
+        columns = [
+            {"label": "Date", "fieldname": "posting_date", "fieldtype": "Date", "width": 100},
+            {"label": "Ref Document", "fieldname": "voucher_type", "fieldtype": "Data", "width": 120},
+            {"label": "Ref ID", "fieldname": "voucher_no", "fieldtype": "Dynamic Link", "width": 150},
+            {"label": "Debit", "fieldname": "debit", "fieldtype": "Currency", "width": 100},
+            {"label": "Credit", "fieldname": "credit", "fieldtype": "Currency", "width": 100},
+            {"label": "Balance", "fieldname": "balance", "fieldtype": "Currency", "width": 100},
+            {"label": "Remarks", "fieldname": "remarks", "fieldtype": "Data", "width": 200}
+        ]
+        
+        # Process SAP statement data
+        result = []
+        running_balance = sap_statement_data.get('opening_balance', 0)
+        
+        # SAP data is already sorted chronologically, so we can use it directly
+        transactions = sap_statement_data.get('transactions', [])
+        
+        for transaction in transactions:
+            running_balance += (transaction.get('debit', 0) or 0) - (transaction.get('credit', 0) or 0)
+            
+            result.append([
+                transaction.get('date', ''),
+                transaction.get('document_type', ''),
+                transaction.get('document_number', ''),
+                transaction.get('debit', 0) or 0,
+                transaction.get('credit', 0) or 0,
+                running_balance,
+                transaction.get('remarks', '')
+            ])
+        
+        # Add closing balance row
+        result.append([
+            "",  # Empty date
+            "Closing Balance",
+            "",  # Empty ref id
+            "",  # Empty debit
+            "",  # Empty credit
+            running_balance,
+            ""   # Empty remarks
+        ])
+        
+        statement_data = {
+            "columns": columns,
+            "result": result,
+            "message": f"Customer Statement for {customer}",
+            "chart": {},
+            "report_summary": [
+                {
+                    "value": len(result),
+                    "label": "Total Transactions",
+                    "datatype": "Int"
+                },
+                {
+                    "value": running_balance,
+                    "label": "Closing Balance",
+                    "datatype": "Currency"
+                }
+            ]
+        }
         
         if file_format.lower() == "pdf":
             # Create PDF content

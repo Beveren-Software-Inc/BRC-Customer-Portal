@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Bar,
@@ -35,6 +35,8 @@ import {
 import { useApi } from "@/hooks/useApi";
 import { useCurrencySettings } from "@/context/currency-context";
 import type { MonthlySalesOrderStat } from "@/lib/api";
+import { getInvoiceStatusSummary } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 
 // -----------------------------
@@ -301,11 +303,6 @@ export function DashboardCharts({
 
   // Processed chart data states.
   const [salesData, setSalesData] = useState<MonthData[]>([]);
-  const [invoiceData, setInvoiceData] = useState<Record<string, any[]>>({
-    current: [],
-    previous: [],
-    ytd: [],
-  });
 
   // Define fields to fetch for each document type
   const salesOrderFields = [
@@ -531,141 +528,13 @@ export function DashboardCharts({
   // -----------------------------
   // Process Invoice, Product, Delivery Data (wrapped in useCallback)
   // -----------------------------
-  const processInvoiceData = useCallback((invoiceData: any[]) => {
-    try {
-      const periods: Record<string, (invoice: any) => boolean> = {
-        current: (invoice) => {
-          if (!invoice.posting_date) return false;
-          const invDate = new Date(invoice.posting_date);
-          if (isNaN(invDate.getTime())) return false;
-          const today = new Date();
-          return (
-            invDate.getMonth() === today.getMonth() &&
-            invDate.getFullYear() === today.getFullYear()
-          );
-        },
-        previous: (invoice) => {
-          if (!invoice.posting_date) return false;
-          const invDate = new Date(invoice.posting_date);
-          if (isNaN(invDate.getTime())) return false;
-          const today = new Date();
-          const prevMonth = today.getMonth() === 0 ? 11 : today.getMonth() - 1;
-          const prevYear =
-            today.getMonth() === 0
-              ? today.getFullYear() - 1
-              : today.getFullYear();
-          return (
-            invDate.getMonth() === prevMonth &&
-            invDate.getFullYear() === prevYear
-          );
-        },
-        ytd: (invoice) => {
-          if (!invoice.posting_date) return false;
-          const invDate = new Date(invoice.posting_date);
-          if (isNaN(invDate.getTime())) return false;
-          const today = new Date();
-          return invDate.getFullYear() === today.getFullYear();
-        },
-        "3months": (invoice) => {
-          if (!invoice.posting_date) return false;
-          const invDate = new Date(invoice.posting_date);
-          if (isNaN(invDate.getTime())) return false;
-          const today = new Date();
-          const threeMonthsAgo = new Date();
-          threeMonthsAgo.setMonth(today.getMonth() - 3);
-          return invDate >= threeMonthsAgo && invDate <= today;
-        },
-        "6months": (invoice) => {
-          if (!invoice.posting_date) return false;
-          const invDate = new Date(invoice.posting_date);
-          if (isNaN(invDate.getTime())) return false;
-          const today = new Date();
-          const sixMonthsAgo = new Date();
-          sixMonthsAgo.setMonth(today.getMonth() - 6);
-          return invDate >= sixMonthsAgo && invDate <= today;
-        },
-        "12months": (invoice) => {
-          if (!invoice.posting_date) return false;
-          const invDate = new Date(invoice.posting_date);
-          if (isNaN(invDate.getTime())) return false;
-          const today = new Date();
-          const twelveMonthsAgo = new Date();
-          twelveMonthsAgo.setMonth(today.getMonth() - 12);
-          return invDate >= twelveMonthsAgo && invDate <= today;
-        },
-      };
-
-      const colorMap: Record<string, string> = {
-        // SAP statuses
-        Closed: "#10b981", // green
-        Open: "#f59e0b",   // orange
-        // Additional/fallback statuses
-        Paid: "#10b981",
-        Unpaid: "#f59e0b",
-        Overdue: "#ef4444",
-        Cancelled: "#6b7280",
-        Draft: "#6366f1",
-        Return: "#8b5cf6",
-        Submitted: "#3b82f6",
-      };
-
-      const processedData: Record<string, any[]> = {};
-
-      Object.entries(periods).forEach(([period, filterFn]) => {
-        let filteredInvoices = invoiceData.filter(filterFn);
-
-        // Fallback: if nothing matches the period filter but data exists, use all invoices
-        if (filteredInvoices.length === 0 && invoiceData.length > 0) {
-          filteredInvoices = invoiceData.slice();
-        }
-
-        const statusGroups: Record<string, number> = {};
-        filteredInvoices.forEach((invoice) => {
-          const statusRaw = invoice.status || "";
-          const status = typeof statusRaw === "string" ? statusRaw.trim() : String(statusRaw);
-          if (!status) return; // Skip invoices without status
-          if (!statusGroups[status]) {
-            statusGroups[status] = 0;
-          }
-          const amount = typeof invoice.grand_total === "number" ? invoice.grand_total : Number(invoice.grand_total || 0);
-          statusGroups[status] += isNaN(amount) ? 0 : amount;
-        });
-
-        const totalAmount = Object.values(statusGroups).reduce(
-          (sum, value) => sum + value,
-          0
-        );
-
-        if (totalAmount === 0) {
-          processedData[period] = [];
-          return;
-        }
-
-        processedData[period] = Object.entries(statusGroups).map(
-          ([status, value]) => ({
-            name: status,
-            value,
-            percentage: (value / totalAmount) * 100,
-            total: totalAmount,
-            color: colorMap[status] || "#94a3b8",
-          })
-        );
-      });
-
-      setInvoiceData(processedData);
-    } catch (error) {
-      console.error("Error processing invoice status data:", error);
-      // Set default empty data in case of error
-      setInvoiceData({
-        current: [],
-        previous: [],
-        ytd: [],
-        "3months": [],
-        "6months": [],
-        "12months": [],
-      });
-    }
-  }, []);
+  const { data: serverInvoiceSummary, isLoading: serverInvoiceSummaryLoading } = useQuery({
+    queryKey: ["invoice-status-summary", invoiceTimeRange],
+    queryFn: async () => await getInvoiceStatusSummary(invoiceTimeRange),
+    staleTime: 1000 * 60 * 60,
+    refetchOnMount: true,
+    retry: 2,
+  });
 
   // -----------------------------
   // useEffect hooks to trigger data processing
@@ -676,11 +545,7 @@ export function DashboardCharts({
     }
   }, [orders, salesTimeRange, processSalesData]);
 
-  useEffect(() => {
-    if (invoices && invoices.length > 0) {
-      processInvoiceData(invoices);
-    }
-  }, [invoices, processInvoiceData]);
+  // no effect needed; computeInvoiceData is memoized on invoices
 
   const handleInvoiceTimeRangeChange = (value: string) => {
     setInvoiceTimeRange(value as any);
@@ -868,22 +733,22 @@ export function DashboardCharts({
             />
           ) : (
             <div className="h-[300px]">
-              {!invoiceData[invoiceTimeRange] ||
-              invoiceData[invoiceTimeRange].length === 0 ? (
+              {!serverInvoiceSummary ||
+              !serverInvoiceSummary.buckets ||
+              serverInvoiceSummary.buckets.length === 0 ? (
                 <div className="flex items-center justify-center h-full text-muted-foreground">
                   <div className="text-center">
                     <PieChartIcon className="h-12 w-12 mx-auto mb-2 opacity-50" />
                     <p className="text-sm">
                       No invoice data available for {invoiceTimeRange} period
                     </p>
-                    {/* <p className="text-xs mt-1">Debug: {JSON.stringify(invoiceData)}</p> */}
                   </div>
                 </div>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <PieChart>
                     <Pie
-                      data={invoiceData[invoiceTimeRange] || []}
+                      data={serverInvoiceSummary.buckets}
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
@@ -894,8 +759,8 @@ export function DashboardCharts({
                         `${name}: ${(percent * 100).toFixed(0)}%`
                       }
                     >
-                      {(invoiceData[invoiceTimeRange] || []).map(
-                        (entry, index: number) => (
+                      {(serverInvoiceSummary.buckets || []).map(
+                        (entry: any, index: number) => (
                           <Cell key={`cell-${index}`} fill={entry.color} />
                         )
                       )}
