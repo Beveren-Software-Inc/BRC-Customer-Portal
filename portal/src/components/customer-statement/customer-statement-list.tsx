@@ -299,7 +299,7 @@ export default function CustomerStatementList() {
       );
     }
 
-    if (!statementData || !statementData.result) {
+    if (!statementData || !statementData.transactions) {
       return (
         <div className="flex items-center justify-center py-8 text-muted-foreground">
           <FileText className="h-8 w-8 mr-2 opacity-50" />
@@ -308,9 +308,9 @@ export default function CustomerStatementList() {
       );
     }
 
-    const { result, columns, report_summary, customer_code, data_source } = statementData;
+    const { transactions, summary, customer_name, opening_balance, closing_balance } = statementData;
 
-    if (!result || result.length === 0) {
+    if (!transactions || transactions.length === 0) {
       return (
         <div className="flex items-center justify-center py-8 text-muted-foreground">
           <FileText className="h-8 w-8 mr-2 opacity-50" />
@@ -320,20 +320,20 @@ export default function CustomerStatementList() {
     }
 
     // Debug: Log the data structure to understand what we're working with
-    console.log("GL Statement data:", { result, columns, report_summary, customer_code, data_source });
-    console.log("First transaction row:", result[0]);
+    console.log("Customer Statement data:", { transactions, summary, customer_name, opening_balance, closing_balance });
+    console.log("First transaction:", transactions[0]);
 
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">
-            {t('GL Statement Preview')} 
+            {t('Customer Statement Preview')} 
             <span className="text-sm text-muted-foreground ml-2">
-              ({data_source === 'GL_OJDT_JDT1' ? 'GL Data' : 'Business Data'})
+              ({customer_name || 'Customer'})
             </span>
           </h3>
           <div className="text-sm text-muted-foreground">
-            {result.length} {t('transaction', { count: result.length })} {t('found')}
+            {transactions.length} {t('transaction', { count: transactions.length })} {t('found')}
           </div>
         </div>
 
@@ -343,35 +343,41 @@ export default function CustomerStatementList() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[100px]">Date</TableHead>
-                  <TableHead className="w-[120px]">Document</TableHead>
-                  <TableHead className="w-[150px]">Base Ref</TableHead>
-                  <TableHead className="w-[100px]">Account</TableHead>
+                  <TableHead className="w-[120px]">Document Type</TableHead>
+                  <TableHead className="w-[150px]">Document Number</TableHead>
                   <TableHead className="w-[100px] text-right">Debit</TableHead>
                   <TableHead className="w-[100px] text-right">Credit</TableHead>
+                  <TableHead className="w-[100px] text-right">Balance</TableHead>
                   <TableHead className="min-w-[200px]">Remarks</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {result.map((row: any[], index: number) => {
-                  const [date, document, baseRef, accountCode, debit, credit, remarks] = row;
-                  const isSummaryRow = document === 'PERIOD TOTALS';
+                {transactions.map((transaction: any, index: number) => {
+                  const isInvoice = transaction.document_type === 'Sales Invoice';
+                  const isPayment = transaction.document_type === 'Payment';
                   
                   return (
-                    <TableRow key={index} className={isSummaryRow ? 'bg-muted font-medium' : ''}>
+                    <TableRow key={index} className={isPayment ? 'bg-green-50 dark:bg-green-900/20' : ''}>
                       <TableCell className="font-medium">
-                        {date ? formatDate(date) : ''}
+                        {transaction.date ? formatDate(transaction.date) : ''}
                       </TableCell>
-                      <TableCell>{document || ''}</TableCell>
-                      <TableCell>{baseRef || ''}</TableCell>
-                      <TableCell>{accountCode || ''}</TableCell>
+                      <TableCell>
+                        <Badge variant={isInvoice ? 'default' : 'secondary'}>
+                          {transaction.document_type || ''}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{transaction.document_number || ''}</TableCell>
                       <TableCell className="text-right">
-                        {debit && debit > 0 ? formatCurrency(debit, 'SAR') : '-'}
+                        {transaction.debit && transaction.debit > 0 ? formatCurrency(transaction.debit, transaction.currency || 'SAR') : '-'}
                       </TableCell>
                       <TableCell className="text-right">
-                        {credit && credit > 0 ? formatCurrency(credit, 'SAR') : '-'}
+                        {transaction.credit && transaction.credit > 0 ? formatCurrency(transaction.credit, transaction.currency || 'SAR') : '-'}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {formatCurrency(transaction.balance || 0, transaction.currency || 'SAR')}
                       </TableCell>
                       <TableCell className="max-w-xs truncate">
-                        {remarks || ''}
+                        {transaction.remarks || ''}
                       </TableCell>
                     </TableRow>
                   );
@@ -379,40 +385,46 @@ export default function CustomerStatementList() {
               </TableBody>
             </Table>
           </div>
-          {result.length > 500 && (
+          {transactions.length > 500 && (
             <div className="p-3 bg-muted text-sm text-muted-foreground text-center">
-              {t('Showing first 500 rows of {count} total rows. Download for complete data.', { count: result.length })}
+              {t('Showing first 500 rows of {count} total rows. Download for complete data.', { count: transactions.length })}
             </div>
           )}
         </div>
 
-        {/* GL Statement Summary */}
+        {/* Customer Statement Summary */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mt-6">
           <div className="bg-blue-50 p-4 rounded-lg">
-            <p className="text-sm text-blue-600">{t('Total GL Transactions')}</p>
+            <p className="text-sm text-blue-600">{t('Total Transactions')}</p>
             <p className="text-xl font-medium text-blue-900">
-              {report_summary?.find(s => s.label === 'Total GL Transactions')?.value || 0}
+              {summary?.total_transactions || 0}
             </p>
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
-            <p className="text-sm text-green-600">{t('Total Debits')}</p>
+            <p className="text-sm text-green-600">{t('Total Invoices')}</p>
             <p className="text-xl font-medium text-green-900">
-              {formatCurrency(report_summary?.find(s => s.label === 'Total Debits')?.value || 0, 'SAR')}
+              {formatCurrency(summary?.total_invoice_amount || 0, 'SAR')}
+            </p>
+            <p className="text-xs text-green-600">
+              {summary?.total_invoices || 0} {t('invoice', { count: summary?.total_invoices || 0 })}
             </p>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
-            <p className="text-sm text-purple-600">{t('Total Credits')}</p>
+            <p className="text-sm text-purple-600">{t('Total Payments')}</p>
             <p className="text-xl font-medium text-purple-900">
-              {formatCurrency(report_summary?.find(s => s.label === 'Total Credits')?.value || 0, 'SAR')}
+              {formatCurrency(summary?.total_payment_amount || 0, 'SAR')}
+            </p>
+            <p className="text-xs text-purple-600">
+              {summary?.total_payments || 0} {t('payment', { count: summary?.total_payments || 0 })}
             </p>
           </div>
           <div className="bg-orange-50 p-4 rounded-lg">
-            <p className="text-sm text-orange-600">{t('Net Amount')}</p>
+            <p className="text-sm text-orange-600">{t('Closing Balance')}</p>
             <p className="text-xl font-medium text-orange-900">
-              {formatCurrency(report_summary?.find(s => s.label === 'Net Amount')?.value || 0, 'SAR')}
+              {formatCurrency(closing_balance || 0, 'SAR')}
             </p>
-            <p className={`text-xs ${(report_summary?.find(s => s.label === 'Net Amount')?.value || 0) >= 0 ? 'text-red-500' : 'text-green-500'}`}>
-              {(report_summary?.find(s => s.label === 'Net Amount')?.value || 0) >= 0 ? t('Amount Due') : t('Credit Balance')}
+            <p className={`text-xs ${(closing_balance || 0) >= 0 ? 'text-red-500' : 'text-green-500'}`}>
+              {(closing_balance || 0) >= 0 ? t('Amount Due') : t('Credit Balance')}
             </p>
           </div>
         </div>
