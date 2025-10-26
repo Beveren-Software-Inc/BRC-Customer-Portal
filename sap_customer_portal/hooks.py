@@ -180,23 +180,11 @@ doc_events = {
 # Scheduled Tasks
 # ---------------
 
-# scheduler_events = {
-# 	"all": [
-# 		"sap_customer_portal.tasks.all"
-# 	],
-# 	"daily": [
-# 		"sap_customer_portal.tasks.daily"
-# 	],
-# 	"hourly": [
-# 		"sap_customer_portal.tasks.hourly"
-# 	],
-# 	"weekly": [
-# 		"sap_customer_portal.tasks.weekly"
-# 	],
-# 	"monthly": [
-# 		"sap_customer_portal.tasks.monthly"
-# 	],
-# }
+scheduler_events = {
+    "daily": [
+        "sap_customer_portal.scheduler.daily_sync_jl_entries"
+    ],
+}
 
 # Testing
 # -------

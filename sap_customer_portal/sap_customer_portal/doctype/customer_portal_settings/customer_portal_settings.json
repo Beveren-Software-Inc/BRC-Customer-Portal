@@ -13,7 +13,9 @@
   "company_name",
   "allow_download_files",
   "column_break_yjvp",
-  "download_format"
+  "download_format",
+  "sync_section",
+  "sync_sap_jl_entry_button"
  ],
  "fields": [
   {
@@ -61,6 +63,17 @@
    "fieldtype": "Select",
    "label": "Download Format",
    "options": "\nPDF\nExcel"
+  },
+  {
+   "fieldname": "sync_section",
+   "fieldtype": "Section Break",
+   "label": "SAP Data Sync"
+  },
+  {
+   "fieldname": "sync_sap_jl_entry_button",
+   "fieldtype": "Button",
+   "label": "Sync SAP JL Entries",
+   "options": "sync_sap_jl_entries"
   }
  ],
  "grid_page_length": 50,

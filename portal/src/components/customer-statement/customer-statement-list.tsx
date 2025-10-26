@@ -322,6 +322,14 @@ export default function CustomerStatementList() {
     // Debug: Log the data structure to understand what we're working with
     console.log("Customer Statement data:", { transactions, summary, customer_name, opening_balance, closing_balance });
     console.log("First transaction:", transactions[0]);
+    
+    // Group transactions by date for better display
+    const getTransactionTypeColor = (type: string) => {
+      if (type.toLowerCase().includes('invoice')) return 'bg-blue-50 dark:bg-blue-900/20';
+      if (type.toLowerCase().includes('payment')) return 'bg-green-50 dark:bg-green-900/20';
+      if (type.toLowerCase().includes('opening')) return 'bg-orange-50 dark:bg-orange-900/20';
+      return '';
+    };
 
     return (
       <div className="space-y-4">
@@ -343,41 +351,42 @@ export default function CustomerStatementList() {
               <TableHeader>
                 <TableRow>
                   <TableHead className="w-[100px]">Date</TableHead>
-                  <TableHead className="w-[120px]">Document Type</TableHead>
-                  <TableHead className="w-[150px]">Document Number</TableHead>
+                  <TableHead className="w-[120px]">Type</TableHead>
+                  <TableHead className="w-[120px]">Number</TableHead>
+                  <TableHead className="w-[300px] max-w-[300px]">Description</TableHead>
                   <TableHead className="w-[100px] text-right">Debit</TableHead>
                   <TableHead className="w-[100px] text-right">Credit</TableHead>
                   <TableHead className="w-[100px] text-right">Balance</TableHead>
-                  <TableHead className="min-w-[200px]">Remarks</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {transactions.map((transaction: any, index: number) => {
-                  const isInvoice = transaction.document_type === 'Sales Invoice';
-                  const isPayment = transaction.document_type === 'Payment';
+                  const bgClass = getTransactionTypeColor(transaction.type);
                   
                   return (
-                    <TableRow key={index} className={isPayment ? 'bg-green-50 dark:bg-green-900/20' : ''}>
+                    <TableRow key={index} className={bgClass}>
                       <TableCell className="font-medium">
                         {transaction.date ? formatDate(transaction.date) : ''}
                       </TableCell>
                       <TableCell>
-                        <Badge variant={isInvoice ? 'default' : 'secondary'}>
-                          {transaction.document_type || ''}
+                        <Badge variant="secondary">
+                          {transaction.type || 'General'}
                         </Badge>
                       </TableCell>
-                      <TableCell>{transaction.document_number || ''}</TableCell>
-                      <TableCell className="text-right">
-                        {transaction.debit && transaction.debit > 0 ? formatCurrency(transaction.debit, transaction.currency || 'SAR') : '-'}
+                      <TableCell>{transaction.number || ''}</TableCell>
+                      <TableCell className="max-w-[300px] break-words">
+                        <div className="whitespace-normal">
+                          {transaction.description || ''}
+                        </div>
                       </TableCell>
                       <TableCell className="text-right">
-                        {transaction.credit && transaction.credit > 0 ? formatCurrency(transaction.credit, transaction.currency || 'SAR') : '-'}
+                        {transaction.debit && transaction.debit > 0 ? formatCurrency(transaction.debit, 'SAR') : '-'}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {transaction.credit && transaction.credit > 0 ? formatCurrency(transaction.credit, 'SAR') : '-'}
                       </TableCell>
                       <TableCell className="text-right font-medium">
-                        {formatCurrency(transaction.balance || 0, transaction.currency || 'SAR')}
-                      </TableCell>
-                      <TableCell className="max-w-xs truncate">
-                        {transaction.remarks || ''}
+                        {formatCurrency(transaction.balance || 0, 'SAR')}
                       </TableCell>
                     </TableRow>
                   );
@@ -401,21 +410,15 @@ export default function CustomerStatementList() {
             </p>
           </div>
           <div className="bg-green-50 p-4 rounded-lg">
-            <p className="text-sm text-green-600">{t('Total Invoices')}</p>
+            <p className="text-sm text-green-600">{t('Total Debit')}</p>
             <p className="text-xl font-medium text-green-900">
-              {formatCurrency(summary?.total_invoice_amount || 0, 'SAR')}
-            </p>
-            <p className="text-xs text-green-600">
-              {summary?.total_invoices || 0} {t('invoice', { count: summary?.total_invoices || 0 })}
+              {formatCurrency(summary?.total_debit || 0, 'SAR')}
             </p>
           </div>
           <div className="bg-purple-50 p-4 rounded-lg">
-            <p className="text-sm text-purple-600">{t('Total Payments')}</p>
+            <p className="text-sm text-purple-600">{t('Total Credit')}</p>
             <p className="text-xl font-medium text-purple-900">
-              {formatCurrency(summary?.total_payment_amount || 0, 'SAR')}
-            </p>
-            <p className="text-xs text-purple-600">
-              {summary?.total_payments || 0} {t('payment', { count: summary?.total_payments || 0 })}
+              {formatCurrency(summary?.total_credit || 0, 'SAR')}
             </p>
           </div>
           <div className="bg-orange-50 p-4 rounded-lg">

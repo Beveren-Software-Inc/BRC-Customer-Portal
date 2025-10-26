@@ -1,6 +1,6 @@
 import frappe
 from frappe.utils.data import today, getdate
-from sap_customer_portal import sap_api_utils
+import sap_customer_portal.sap_api_utils as sap_api_utils
 
 
 @frappe.whitelist()
@@ -687,3 +687,442 @@ def get_user_default_company():
             "success": False,
             "error": str(e)
         }
+
+
+
+@frappe.whitelist(allow_guest=False)
+def sync_sap_jl_entries(from_date=None, to_date=None):
+    """Sync SAP JL Entry data from SAP B1 to local database
+    
+    Fetches all journal entries from SAP, then saves journal entry lines
+    that have ShortName in the Customer table.
+    Only saves lines where ShortName starts with a letter (customer codes like F10289, J6878)
+    to quickly skip numeric codes.
+    Commits in batches of 20 for performance.
+    Runs in background with 60 minute timeout.
+    
+    Args:
+        from_date (str): Start date for filtering journal entries
+        to_date (str): End date for filtering journal entries
+    """
+    try:
+        date_msg = ""
+        if from_date and to_date:
+            date_msg = f" from {from_date} to {to_date}"
+        frappe.log_error(f"Starting SAP JL Entry sync{date_msg}...")
+        
+        # Enqueue the background job
+        frappe.enqueue(
+            'sap_customer_portal.api.customer_balance._sync_sap_jl_entries_background',
+            queue='long',
+            job_name='sync_sap_jl_entries',
+            timeout=10800,  # 60 minutes
+            is_async=True,
+            from_date=from_date,
+            to_date=to_date
+        )
+        
+        return {
+            "success": True,
+            "message": f"SAP JL Entry sync has been started in the background{date_msg}. This may take several minutes."
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error starting sync_sap_jl_entries: {str(e)}", "SAP JL Entry Sync")
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Error starting sync: {str(e)}"
+        }
+
+
+def _parse_date_filters(from_date, to_date):
+    """Parse and format date filters for SAP query"""
+    from_date_parsed = None
+    to_date_parsed = None
+    
+    if from_date:
+        from_date_parsed = from_date.split('T')[0] if 'T' in str(from_date) else from_date
+    if to_date:
+        to_date_parsed = to_date.split('T')[0] if 'T' in str(to_date) else to_date
+    
+    return from_date_parsed, to_date_parsed
+
+
+def _get_customer_set():
+    """Get all customer codes as a set for quick lookup"""
+    all_customers = frappe.get_all("Customer", pluck="name")
+    customer_set = set(all_customers)
+    frappe.logger().info(f"Found {len(customer_set)} customers in system")
+    frappe.log_error(f"Found {len(customer_set)} customers in system")
+    return customer_set
+
+
+def _fetch_journal_entries_batch(skip, batch_size, from_date_parsed, to_date_parsed):
+    """Fetch a batch of journal entries from SAP"""
+    params = {
+        '$orderby': 'JdtNum asc',
+        '$top': batch_size,
+        '$skip': skip
+    }
+    
+    # Add date filter if provided
+    if from_date_parsed and to_date_parsed:
+        params['$filter'] = f"ReferenceDate ge '{from_date_parsed}' and ReferenceDate le '{to_date_parsed}'"
+    
+    # Fetch from SAP
+    data = sap_api_utils.fetch_sap_data_with_session('JournalEntries', params, None)
+    
+    # Handle both list response and dict with 'value' key
+    if not data:
+        return []
+    
+    if isinstance(data, list):
+        return data
+    elif isinstance(data, dict) and 'value' in data:
+        return data.get('value', [])
+    else:
+        return []
+
+
+def _should_process_line(short_name, customer_set):
+    """Check if a line should be processed based on customer filtering"""
+    if not short_name:
+        return False, "No ShortName"
+    
+    # Skip if ShortName doesn't start with a letter
+    if not short_name[0].isalpha():
+        return False, "ShortName doesn't start with letter"
+    
+    # Check if ShortName is in the customer list
+    if short_name not in customer_set:
+        return False, "Not in customer list"
+    
+    return True, ""
+
+
+def _save_jl_entry_with_retry(jdt_num, line_id, line, original_journal, original, max_retries=3):
+    """Save JL Entry with retry logic for deadlocks
+    
+    Returns:
+        tuple: (success: bool, saved: bool)
+    """
+    retry_count = 0
+    
+    while retry_count < max_retries:
+        try:
+            # Check if record already exists
+            existing = frappe.db.get_value('Sap JL Entry', {
+                'jdtnum': jdt_num,
+                'line_id': line_id
+            }, 'name')
+            
+            if existing:
+                return True, False  # Exists, skip
+            
+            # Parse dates from journal entry line
+            posting_date = line.get('ReferenceDate1')
+            due_date = line.get('DueDate')
+            reference = line.get('Reference1', '')
+            
+            # Parse dates to remove time portion
+            if posting_date:
+                posting_date = posting_date.split('T')[0] if 'T' in str(posting_date) else posting_date
+            if due_date:
+                due_date = due_date.split('T')[0] if 'T' in str(due_date) else due_date
+            
+            # Try to insert
+            try:
+                jl_entry = frappe.get_doc({
+                    'doctype': 'Sap JL Entry',
+                    'jdtnum': jdt_num,
+                    'line_id': line_id,
+                    'posting_date': posting_date,
+                    'due_date': due_date,
+                    'account_code': line.get('AccountCode'),
+                    'debit': line.get('Debit', 0) or 0,
+                    'credit': line.get('Credit', 0) or 0,
+                    'customer': line.get('ShortName'),
+                    'reference': reference,
+                    'line_memo': line.get('LineMemo', ''),
+                    'original_journal': original_journal,
+                    'original': original
+                })
+                jl_entry.insert(ignore_permissions=True, ignore_if_duplicate=True)
+                
+            except frappe.exceptions.QueryDeadlockError:
+                retry_count += 1
+                if retry_count < max_retries:
+                    import time
+                    time.sleep(0.2 * retry_count)
+                    frappe.db.rollback()
+                    continue
+                else:
+                    frappe.log_error(f"Deadlock after {max_retries} tries for JDT {jdt_num}, Line {line_id}")
+                    return True, False  # Skip after max retries
+            
+            return True, True  # Success!
+            
+        except Exception as e:
+            if isinstance(e, frappe.exceptions.QueryDeadlockError):
+                retry_count += 1
+                if retry_count < max_retries:
+                    import time
+                    time.sleep(0.2 * retry_count)
+                    frappe.db.rollback()
+                    continue
+                else:
+                    frappe.log_error(f"Deadlock after {max_retries} tries for JDT {jdt_num}, Line {line_id}")
+                    return True, False
+            else:
+                frappe.log_error(f"Error saving JL Entry JDT {jdt_num}, Line {line_id}: {str(e)[:100]}")
+                return True, False  # Skip on error
+    
+    return False, False  # Failed after all retries
+
+
+def _process_journal_entry(je, customer_set, total_lines, saved_lines, skipped_lines, batch_size, batch_count):
+    """Process a single journal entry and return updated counts
+    
+    Returns:
+        tuple: (total_lines, saved_lines, skipped_lines, batch_count)
+    """
+    jdt_num = je.get('JdtNum')
+    original_journal = je.get('OriginalJournal')
+    original = je.get('Original')
+    
+    # Get lines from the journal entry
+    lines = je.get('JournalEntryLines', [])
+    if not lines:
+        return total_lines, saved_lines, skipped_lines, batch_count
+    
+    # Process each line
+    for line in lines:
+        total_lines += 1
+        short_name = line.get('ShortName')
+        
+        # Check if we should process this line
+        should_process, skip_reason = _should_process_line(short_name, customer_set)
+        if not should_process:
+            skipped_lines += 1
+            continue
+        
+        # Get line_id
+        line_id = line.get('Line_ID')
+        
+        # Try to save with retry logic
+        success, saved = _save_jl_entry_with_retry(jdt_num, line_id, line, original_journal, original)
+        
+        if not success:
+            skipped_lines += 1
+            continue
+        
+        if saved:
+            # Commit every batch_size records
+            if saved_lines % batch_size == 0:
+                frappe.db.commit()
+                batch_count += 1
+                frappe.logger().info(f"Committed batch {batch_count}. Saved {saved_lines} records so far.")
+            saved_lines += 1
+        else:
+            skipped_lines += 1
+    
+    return total_lines, saved_lines, skipped_lines, batch_count
+
+
+def _sync_sap_jl_entries_background(from_date=None, to_date=None):
+    """Background job to sync SAP JL Entry data
+    This function is accessed dynamically by frappe.enqueue()
+    
+    Args:
+        from_date (str): Start date for filtering (optional)
+        to_date (str): End date for filtering (optional)
+    """
+    try:
+        frappe.log_error("Starting SAP JL Entry sync in background...")
+        
+        # Parse date filters
+        from_date_parsed, to_date_parsed = _parse_date_filters(from_date, to_date)
+        
+        # Get customer set
+        customer_set = _get_customer_set()
+        
+        # Initialize counters
+        total_entries = 0
+        total_lines = 0
+        saved_lines = 0
+        skipped_lines = 0
+        batch_count = 0
+        
+        # Configure batch processing
+        batch_size = 20
+        skip = 0
+        batch_num = 0
+        max_batches = 100000  # Safety limit
+        
+        # Main processing loop
+        while batch_num < max_batches:
+            # Fetch batch of journal entries
+            entries = _fetch_journal_entries_batch(skip, batch_size, from_date_parsed, to_date_parsed)
+            
+            if not entries:
+                frappe.logger().info(f"No entries in batch {batch_num}")
+                break
+            
+            total_entries += len(entries)
+            
+            # Process each journal entry
+            for je in entries:
+                total_lines, saved_lines, skipped_lines, batch_count = _process_journal_entry(
+                    je, customer_set, total_lines, saved_lines, skipped_lines, batch_size, batch_count
+                )
+            
+            # Check if this is the last page
+            if len(entries) < batch_size:
+                break
+            
+            skip += batch_size
+            batch_num += 1
+        
+        # Final commit
+        frappe.db.commit()
+        
+        summary = f"""
+            Sync Complete:
+            - Total Entries Processed: {total_entries}
+            - Total Lines Processed: {total_lines}
+            - Lines Saved: {saved_lines}
+            - Lines Skipped: {skipped_lines}
+            - Commits: {batch_count}
+        """
+        
+        frappe.logger().info(summary)
+        frappe.log_error(summary)
+        
+        return {
+            "success": True,
+            "total_entries": total_entries,
+            "total_lines": total_lines,
+            "saved_lines": saved_lines,
+            "skipped_lines": skipped_lines,
+            "message": f"Successfully synced {saved_lines} JL Entry lines from {total_entries} journal entries"
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error in _sync_sap_jl_entries_background: {str(e)}", "SAP JL Entry Sync")
+        frappe.db.rollback()
+        return {
+            "success": False,
+            "error": str(e),
+            "message": f"Error during sync: {str(e)}"
+        }
+
+
+@frappe.whitelist(allow_guest=False)
+def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
+    """Get customer statement from SAP JL Entry data
+    
+    Args:
+        from_date (str): Start date for filtering
+        to_date (str): End date for filtering
+        
+    Returns:
+        dict: Statement data with transactions and running balance
+    """
+    try:
+        customer_code = sap_api_utils.get_customer_code_from_user()
+        if not customer_code:
+            return {
+                "error": True,
+                "message": "No customer code found for current user"
+            }
+        
+        if not from_date or not to_date:
+            return {
+                "error": True,
+                "message": "From date and to date are required"
+            }
+        
+        # Parse dates
+        from_date_parsed = from_date.split('T')[0] if 'T' in str(from_date) else from_date
+        to_date_parsed = to_date.split('T')[0] if 'T' in str(to_date) else to_date
+        
+        # Fetch JL Entry records for this customer and date range
+        jl_entries = frappe.db.sql("""
+            SELECT 
+                jdtnum,
+                line_id,
+                posting_date,
+                original_journal,
+                reference,
+                line_memo,
+                debit,
+                credit,
+                customer,
+                account_code
+            FROM `tabSap JL Entry`
+            WHERE customer = %s
+            AND posting_date BETWEEN %s AND %s
+            ORDER BY posting_date ASC, jdtnum ASC, line_id ASC
+        """, (customer_code, from_date_parsed, to_date_parsed), as_dict=True)
+        
+        if not jl_entries:
+            return {
+                "error": True,
+                "message": "No transactions found for the selected date range"
+            }
+        
+        # Calculate running balance
+        transactions = []
+        running_balance = 0
+        
+        for entry in jl_entries:
+            running_balance += (entry.debit or 0) - (entry.credit or 0)
+            
+            transactions.append({
+                'date': entry.posting_date,
+                'type': entry.original_journal or 'General',
+                'number': entry.reference or '',
+                'description': entry.line_memo or '',
+                'debit': entry.debit or 0,
+                'credit': entry.credit or 0,
+                'balance': running_balance,
+                'status': 'Closed',
+                'account_code': entry.account_code,
+                'jdtnum': entry.jdtnum,
+                'line_id': entry.line_id
+            })
+        
+        # Calculate summary
+        total_debit = sum(t['debit'] for t in transactions)
+        total_credit = sum(t['credit'] for t in transactions)
+        
+        # Get customer name
+        customer_name = frappe.db.get_value("Customer", customer_code, "customer_name") or customer_code
+        
+        return {
+            "success": True,
+            "data": {
+                "customer_code": customer_code,
+                "customer_name": customer_name,
+                "from_date": from_date_parsed,
+                "to_date": to_date_parsed,
+                "opening_balance": running_balance - (total_debit - total_credit),
+                "closing_balance": running_balance,
+                "transactions": transactions,
+                "summary": {
+                    "total_transactions": len(transactions),
+                    "total_debit": total_debit,
+                    "total_credit": total_credit,
+                    "net_amount": total_debit - total_credit
+                }
+            }
+        }
+        
+    except Exception as e:
+        frappe.log_error(f"Error fetching customer statement from JL Entry: {str(e)}")
+        return {
+            "error": True,
+            "message": f"Error fetching statement: {str(e)}"
+        }
+
