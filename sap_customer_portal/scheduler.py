@@ -20,8 +20,12 @@ def daily_sync_jl_entries():
         to_date = today()
         from_date = add_days(to_date, -7)
         
-        frappe.log_error(f"Daily sync: Fetching JL entries from {from_date} to {to_date}")
-        frappe.logger().info(f"Daily sync: Fetching JL entries from {from_date} to {to_date}")
+        # Ensure we have string dates
+        from_date_str = str(from_date) if from_date else None
+        to_date_str = str(to_date) if to_date else None
+        
+        frappe.log_error(f"Daily sync: Fetching JL entries from {from_date_str} to {to_date_str}")
+        frappe.logger().info(f"Daily sync: Fetching JL entries from {from_date_str} to {to_date_str}")
         
         # Call the background sync function with date range
         from sap_customer_portal.api.customer_balance import _sync_sap_jl_entries_background
@@ -33,12 +37,12 @@ def daily_sync_jl_entries():
             job_name='daily_sync_sap_jl_entries',
             timeout=3600,  # 60 minutes
             is_async=True,
-            from_date=from_date.strftime('%Y-%m-%d'),
-            to_date=to_date.strftime('%Y-%m-%d')
+            from_date=from_date_str,
+            to_date=to_date_str
         )
         
-        frappe.log_error(f"Daily sync job queued successfully for {from_date} to {to_date}")
-        frappe.logger().info(f"Daily sync job queued successfully for {from_date} to {to_date}")
+        frappe.log_error(f"Daily sync job queued successfully for {from_date_str} to {to_date_str}")
+        frappe.logger().info(f"Daily sync job queued successfully for {from_date_str} to {to_date_str}")
         
     except Exception as e:
         frappe.log_error(f"Error in daily_sync_jl_entries: {str(e)}", "SAP JL Entry Daily Sync")

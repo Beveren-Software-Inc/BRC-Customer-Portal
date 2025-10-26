@@ -1,3 +1,5 @@
+
+
 import frappe
 from frappe.utils.data import today, getdate
 import sap_customer_portal.sap_api_utils as sap_api_utils
@@ -800,39 +802,63 @@ def _should_process_line(short_name, customer_set):
     
     return True, ""
 
+import time
+from contextlib import contextmanager
+
+@contextmanager
+def db_transaction():
+    """Context manager for explicit transaction handling"""
+    try:
+        yield
+        frappe.db.commit()
+    except Exception:
+        frappe.db.rollback()
+        raise
+
 
 def _save_jl_entry_with_retry(jdt_num, line_id, line, original_journal, original, max_retries=3):
-    """Save JL Entry with retry logic for deadlocks
+    """Save JL Entry with improved retry logic and lock management
+    
+    Key improvements:
+    1. Check for existing records BEFORE starting transaction
+    2. Exponential backoff with jitter
+    3. Separate transaction per record to minimize lock duration
+    4. Better error handling and logging
     
     Returns:
-        tuple: (success: bool, saved: bool)
+        tuple: (success: bool, saved: bool, error_message: str)
     """
     retry_count = 0
+    last_error = None
     
     while retry_count < max_retries:
         try:
-            # Check if record already exists
-            existing = frappe.db.get_value('Sap JL Entry', {
+            # IMPORTANT: Check existence outside transaction to avoid locks
+            existing = frappe.db.exists('Sap JL Entry', {
                 'jdtnum': jdt_num,
                 'line_id': line_id
-            }, 'name')
+            })
             
             if existing:
-                return True, False  # Exists, skip
+                return True, False, None  # Already exists, skip
             
-            # Parse dates from journal entry line
+            # Parse dates
             posting_date = line.get('ReferenceDate1')
             due_date = line.get('DueDate')
             reference = line.get('Reference1', '')
             
-            # Parse dates to remove time portion
             if posting_date:
                 posting_date = posting_date.split('T')[0] if 'T' in str(posting_date) else posting_date
             if due_date:
                 due_date = due_date.split('T')[0] if 'T' in str(due_date) else due_date
             
-            # Try to insert
-            try:
+            # Use explicit transaction context for single insert
+            with db_transaction():
+                # Truncate line_memo to 100 characters
+                line_memo = line.get('LineMemo', '')
+                if line_memo and len(line_memo) > 100:
+                    line_memo = line_memo[:100]
+                
                 jl_entry = frappe.get_doc({
                     'doctype': 'Sap JL Entry',
                     'jdtnum': jdt_num,
@@ -844,41 +870,57 @@ def _save_jl_entry_with_retry(jdt_num, line_id, line, original_journal, original
                     'credit': line.get('Credit', 0) or 0,
                     'customer': line.get('ShortName'),
                     'reference': reference,
-                    'line_memo': line.get('LineMemo', ''),
+                    'line_memo': line_memo,
                     'original_journal': original_journal,
                     'original': original
                 })
-                jl_entry.insert(ignore_permissions=True, ignore_if_duplicate=True)
                 
-            except frappe.exceptions.QueryDeadlockError:
-                retry_count += 1
-                if retry_count < max_retries:
-                    import time
-                    time.sleep(0.2 * retry_count)
-                    frappe.db.rollback()
-                    continue
-                else:
-                    frappe.log_error(f"Deadlock after {max_retries} tries for JDT {jdt_num}, Line {line_id}")
-                    return True, False  # Skip after max retries
+                # Insert with ignore_if_duplicate
+                jl_entry.insert(ignore_permissions=True, ignore_if_duplicate=True)
             
-            return True, True  # Success!
+            return True, True, None  # Success!
             
-        except Exception as e:
-            if isinstance(e, frappe.exceptions.QueryDeadlockError):
-                retry_count += 1
-                if retry_count < max_retries:
-                    import time
-                    time.sleep(0.2 * retry_count)
-                    frappe.db.rollback()
-                    continue
-                else:
-                    frappe.log_error(f"Deadlock after {max_retries} tries for JDT {jdt_num}, Line {line_id}")
-                    return True, False
+        except frappe.DuplicateEntryError:
+            # Record was created by another process, this is OK
+            return True, False, None
+            
+        except (frappe.exceptions.QueryDeadlockError, 
+                frappe.exceptions.QueryTimeoutError) as e:
+            last_error = e
+            retry_count += 1
+            
+            if retry_count < max_retries:
+                # Exponential backoff with jitter: 0.1-0.3s, 0.2-0.6s, 0.4-1.2s
+                base_delay = 0.1 * (2 ** retry_count)
+                jitter = base_delay * 2
+                delay = base_delay + (time.time() % jitter)
+                
+                frappe.logger().warning(
+                    f"Lock timeout/deadlock on JDT {jdt_num}, Line {line_id}. "
+                    f"Retry {retry_count}/{max_retries} after {delay:.2f}s"
+                )
+                
+                time.sleep(delay)
+                frappe.db.rollback()
+                continue
             else:
-                frappe.log_error(f"Error saving JL Entry JDT {jdt_num}, Line {line_id}: {str(e)[:100]}")
-                return True, False  # Skip on error
+                error_msg = f"Failed after {max_retries} retries: {str(e)[:100]}"
+                frappe.log_error(
+                    f"JDT {jdt_num}, Line {line_id}: {error_msg}",
+                    "JL Entry Lock Timeout"
+                )
+                return False, False, error_msg
+                
+        except Exception as e:
+            error_msg = f"Unexpected error: {str(e)[:100]}"
+            frappe.log_error(
+                f"Error saving JL Entry JDT {jdt_num}, Line {line_id}: {str(e)}",
+                "JL Entry Save Error"
+            )
+            return False, False, error_msg
     
-    return False, False  # Failed after all retries
+    return False, False, f"Failed after {max_retries} retries: {str(last_error)}"
+
 
 
 def _process_journal_entry(je, customer_set, total_lines, saved_lines, skipped_lines, batch_size, batch_count):
@@ -898,34 +940,49 @@ def _process_journal_entry(je, customer_set, total_lines, saved_lines, skipped_l
     
     # Process each line
     for line in lines:
-        total_lines += 1
-        short_name = line.get('ShortName')
-        
-        # Check if we should process this line
-        should_process, skip_reason = _should_process_line(short_name, customer_set)
-        if not should_process:
+        try:
+            total_lines += 1
+            short_name = line.get('ShortName')
+            
+            # Check if we should process this line
+            should_process, skip_reason = _should_process_line(short_name, customer_set)
+            if not should_process:
+                skipped_lines += 1
+                continue
+            
+            # Get line_id
+            line_id = line.get('Line_ID')
+            
+            # Try to save with retry logic
+            result = _save_jl_entry_with_retry(jdt_num, line_id, line, original_journal, original)
+            
+            # Handle the tuple returned (success, saved, error)
+            if len(result) == 3:
+                success, saved, error = result
+            else:
+                # Fallback for old signature
+                success, saved = result
+                error = None
+            
+            if not success:
+                skipped_lines += 1
+                continue
+            
+            if saved:
+                saved_lines += 1
+                # Commit every 10 records to prevent lock timeout
+                if saved_lines % 10 == 0:
+                    frappe.db.commit()
+                    batch_count += 1
+                    frappe.logger().info(f"Committed batch {batch_count}. Saved {saved_lines} records so far.")
+            else:
+                skipped_lines += 1
+        except Exception as e:
+            # Log error but continue processing other lines
+            frappe.log_error(f"Error processing line in JDT {jdt_num}: {str(e)[:200]}", "SAP JL Entry Sync")
+            frappe.logger().error(f"Error processing line in JDT {jdt_num}: {str(e)}")
             skipped_lines += 1
             continue
-        
-        # Get line_id
-        line_id = line.get('Line_ID')
-        
-        # Try to save with retry logic
-        success, saved = _save_jl_entry_with_retry(jdt_num, line_id, line, original_journal, original)
-        
-        if not success:
-            skipped_lines += 1
-            continue
-        
-        if saved:
-            # Commit every batch_size records
-            if saved_lines % batch_size == 0:
-                frappe.db.commit()
-                batch_count += 1
-                frappe.logger().info(f"Committed batch {batch_count}. Saved {saved_lines} records so far.")
-            saved_lines += 1
-        else:
-            skipped_lines += 1
     
     return total_lines, saved_lines, skipped_lines, batch_count
 
@@ -973,9 +1030,17 @@ def _sync_sap_jl_entries_background(from_date=None, to_date=None):
             
             # Process each journal entry
             for je in entries:
-                total_lines, saved_lines, skipped_lines, batch_count = _process_journal_entry(
-                    je, customer_set, total_lines, saved_lines, skipped_lines, batch_size, batch_count
-                )
+                try:
+                    total_lines, saved_lines, skipped_lines, batch_count = _process_journal_entry(
+                        je, customer_set, total_lines, saved_lines, skipped_lines, batch_size, batch_count
+                    )
+                except Exception as e:
+                    # Log error but continue processing other entries
+                    jdt_num = je.get('JdtNum', 'Unknown')
+                    frappe.log_error(f"Error processing JDT {jdt_num}: {str(e)[:200]}", "SAP JL Entry Sync")
+                    frappe.logger().error(f"Error processing JDT {jdt_num}: {str(e)}")
+                    # Continue with next entry
+                    continue
             
             # Check if this is the last page
             if len(entries) < batch_size:
@@ -1125,4 +1190,3 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
             "error": True,
             "message": f"Error fetching statement: {str(e)}"
         }
-
