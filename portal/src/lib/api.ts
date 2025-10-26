@@ -819,7 +819,7 @@ export const openCustomerStatementPrintPreview = async (
 };
 
 /**
- * Get Customer Statement data using sales invoices and payments for preview
+ * Get Customer Statement data using SAP JL Entry data for preview
  */
 export const getSapCustomerStatement = async (
   fromDate: string,
@@ -827,7 +827,7 @@ export const getSapCustomerStatement = async (
 ): Promise<any> => {
   try {
     const response = await fetch(
-      `/api/method/sap_customer_portal.api.customer_balance.get_customer_statement_from_sap`,
+      `/api/method/sap_customer_portal.api.customer_balance.get_customer_statement_from_jl_entry`,
       {
         method: "POST",
         headers: {

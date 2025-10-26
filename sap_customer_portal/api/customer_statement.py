@@ -166,67 +166,72 @@ def download_customer_statement(customer=None, from_date=None, to_date=None, com
         # Validate customer access
         validate_customer_access(customer)
         
-        # Get statement data using SAP data for consistency with preview
-        # This ensures downloads show the same chronological order as the preview
-        from sap_customer_portal.sap_api_utils import get_customer_statement_from_sap, get_customer_code_from_user
+        # Get statement data from SAP JL Entry for consistency with preview
+        from sap_customer_portal.api.customer_balance import get_customer_statement_from_jl_entry
         
-        # Get customer code for SAP lookup
-        customer_code = None
-        try:
-            customer_code = get_customer_code_from_user()
-        except:
-            # Fallback: try to get customer code from customer parameter
-            customer_code = customer
+        # Convert dates to strings for the API
+        from_date_str = from_date.strftime('%Y-%m-%d')
+        to_date_str = to_date.strftime('%Y-%m-%d')
+        
+        # Get customer code
+        customer_code = customer
         
         if not customer_code:
-            frappe.throw(_("Unable to determine customer code for SAP lookup"))
+            frappe.throw(_("Unable to determine customer code"))
         
-        # Get SAP statement data
-        sap_statement_data = get_customer_statement_from_sap(customer_code, from_date, to_date)
+        # Get JL Entry statement data
+        statement_response = get_customer_statement_from_jl_entry(from_date=from_date_str, to_date=to_date_str)
         
-        if not sap_statement_data:
+        if not statement_response or not statement_response.get('success'):
             frappe.throw(_("No data found for the given date range"))
         
-        # Convert SAP data to the expected format for downloads
+        sap_statement_data = statement_response.get('data')
+        
+        if not sap_statement_data or not sap_statement_data.get('transactions'):
+            frappe.throw(_("No data found for the given date range"))
+        
+        # Convert JL Entry data to the expected format for downloads
         columns = [
             {"label": "Date", "fieldname": "posting_date", "fieldtype": "Date", "width": 100},
-            {"label": "Ref Document", "fieldname": "voucher_type", "fieldtype": "Data", "width": 120},
-            {"label": "Ref ID", "fieldname": "voucher_no", "fieldtype": "Dynamic Link", "width": 150},
+            {"label": "Type", "fieldname": "type", "fieldtype": "Data", "width": 120},
+            {"label": "Number", "fieldname": "number", "fieldtype": "Data", "width": 150},
+            {"label": "Description", "fieldname": "description", "fieldtype": "Data", "width": 200},
             {"label": "Debit", "fieldname": "debit", "fieldtype": "Currency", "width": 100},
             {"label": "Credit", "fieldname": "credit", "fieldtype": "Currency", "width": 100},
-            {"label": "Balance", "fieldname": "balance", "fieldtype": "Currency", "width": 100},
-            {"label": "Remarks", "fieldname": "remarks", "fieldtype": "Data", "width": 200}
+            {"label": "Balance", "fieldname": "balance", "fieldtype": "Currency", "width": 100}
         ]
         
-        # Process SAP statement data
+        # Process JL Entry statement data
         result = []
-        running_balance = sap_statement_data.get('opening_balance', 0)
         
-        # SAP data is already sorted chronologically, so we can use it directly
+        # JL Entry data already has calculated balance
         transactions = sap_statement_data.get('transactions', [])
         
         for transaction in transactions:
-            running_balance += (transaction.get('debit', 0) or 0) - (transaction.get('credit', 0) or 0)
-            
             result.append([
                 transaction.get('date', ''),
-                transaction.get('document_type', ''),
-                transaction.get('document_number', ''),
+                transaction.get('type', ''),
+                transaction.get('number', ''),
+                transaction.get('description', ''),
                 transaction.get('debit', 0) or 0,
                 transaction.get('credit', 0) or 0,
-                running_balance,
-                transaction.get('remarks', '')
+                transaction.get('balance', 0) or 0
             ])
+        
+        # Get closing balance
+        closing_balance = sap_statement_data.get('closing_balance', 0)
+        if transactions and len(transactions) > 0:
+            closing_balance = transactions[-1].get('balance', 0)
         
         # Add closing balance row
         result.append([
             "",  # Empty date
             "Closing Balance",
-            "",  # Empty ref id
+            "",  # Empty number
+            "",  # Empty description
             "",  # Empty debit
             "",  # Empty credit
-            running_balance,
-            ""   # Empty remarks
+            closing_balance
         ])
         
         statement_data = {
@@ -241,7 +246,7 @@ def download_customer_statement(customer=None, from_date=None, to_date=None, com
                     "datatype": "Int"
                 },
                 {
-                    "value": running_balance,
+                    "value": closing_balance,
                     "label": "Closing Balance",
                     "datatype": "Currency"
                 }
@@ -348,6 +353,10 @@ def generate_statement_html(data):
     Returns:
         str: HTML content for PDF generation
     """
+    import datetime
+    yesterday = datetime.date.today() - datetime.timedelta(days=1)
+    statement_as_of_date = yesterday.strftime('%Y-%m-%d')
+    
     html = f"""
     <!DOCTYPE html>
     <html>
@@ -375,6 +384,12 @@ def generate_statement_html(data):
                 font-size: 16px;
                 font-weight: bold;
                 margin-top: 10px;
+            }}
+            .statement-as-of {{
+                font-size: 14px;
+                font-style: italic;
+                color: #666;
+                margin-top: 5px;
             }}
             .customer-info {{
                 margin-bottom: 20px;
@@ -420,6 +435,7 @@ def generate_statement_html(data):
         <div class="header">
             <div class="company-name">{data['company_name']}</div>
             <div class="statement-title">Customer Statement</div>
+            <div class="statement-as-of">Statement as of {statement_as_of_date}</div>
         </div>
         
         <div class="customer-info">
