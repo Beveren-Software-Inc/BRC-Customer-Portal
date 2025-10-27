@@ -335,10 +335,10 @@ export default function CustomerStatementList() {
       <div className="space-y-4">
         <div className="flex items-center justify-between">
           <h3 className="text-lg font-medium">
-            {t('Customer Statement Preview')} 
-            <span className="text-sm text-muted-foreground ml-2">
+            {/* {t('Customer Statement Preview')}  */}
+            {/* <span className="text-sm text-muted-foreground ml-2">
               ({customer_name || 'Customer'})
-            </span>
+            </span> */}
           </h3>
           <div className="text-sm text-muted-foreground">
             {transactions.length} {t('transaction', { count: transactions.length })} {t('found')}
