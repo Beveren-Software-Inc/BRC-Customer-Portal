@@ -76,9 +76,9 @@ export default function CustomerBalanceCard({ customerBalance, loading }: Custom
       <CardContent>
         <div className="space-y-3">
           {/* Customer Info */}
-          <div className="text-xs text-muted-foreground">
+          {/* <div className="text-xs text-muted-foreground">
             <p className="font-medium">{customer_name}</p>
-          </div>
+          </div> */}
           
           {/* Current Balance */}
           <div className="space-y-1">

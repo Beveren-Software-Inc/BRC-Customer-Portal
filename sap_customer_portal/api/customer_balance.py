@@ -40,17 +40,21 @@ def clear_customer_cache():
 
 @frappe.whitelist()
 def get_customer_balance():
-    """Get customer balance directly from SAP B1"""
+    """Get customer balance directly from SAP B1 for all linked customer codes"""
     try:
         _current_user = frappe.session.user
         
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
+        # Get all customer codes for current user (handles multiple customers scenario)
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        customer_codes = get_codes() if callable(get_codes) else []
+        if not customer_codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if not single:
+                return {
+                    "error": True,
+                    "message": "No customer code found for current user"
+                }
+            customer_codes = [single]
         
         # Check SAP settings first
         settings = sap_api_utils.get_sap_b1_settings()
@@ -60,20 +64,36 @@ def get_customer_balance():
                 "message": "SAP B1 settings not configured"
             }
         
+        # Fetch balance from SAP for all linked customers
+        all_balances = []
+        total_balance = 0
+        total_credit_limit = 0
         
-        # Fetch balance from SAP
-        balance_data = sap_api_utils.get_customer_balance_from_sap(customer_code)
-        print(f"Balance data: {balance_data}")
+        for customer_code in customer_codes:
+            balance_data = sap_api_utils.get_customer_balance_from_sap(customer_code)
+            if balance_data:
+                all_balances.append(balance_data)
+                total_balance += balance_data.get('current_balance', 0) or 0
+                total_credit_limit += balance_data.get('credit_limit', 0) or 0
         
-        if not balance_data:
+        if not all_balances:
             return {
                 "error": True,
                 "message": "Unable to fetch customer balance from SAP"
             }
         
+        # Return combined balance data
+        combined_balance = {
+            'customer_code': ", ".join([b.get("customer_code", "") for b in all_balances]),
+            'customer_name': ", ".join([b.get("customer_name", "") for b in all_balances]),
+            'current_balance': total_balance,
+            'credit_limit': total_credit_limit,
+            'currency': all_balances[0].get('currency') or 'SAR'
+        }
+        
         return {
             "success": True,
-            "data": balance_data
+            "data": combined_balance
         }
         
     except Exception as e:
@@ -1085,7 +1105,7 @@ def _sync_sap_jl_entries_background(from_date=None, to_date=None):
 
 @frappe.whitelist(allow_guest=False)
 def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
-    """Get customer statement from SAP JL Entry data
+    """Get customer statement from SAP JL Entry data across all linked customer codes
     
     Args:
         from_date (str): Start date for filtering
@@ -1095,12 +1115,17 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
         dict: Statement data with transactions and running balance
     """
     try:
-        customer_code = sap_api_utils.get_customer_code_from_user()
-        if not customer_code:
-            return {
-                "error": True,
-                "message": "No customer code found for current user"
-            }
+        # Get all customer codes for current user (handles multiple customers scenario)
+        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+        customer_codes = get_codes() if callable(get_codes) else []
+        if not customer_codes:
+            single = sap_api_utils.get_customer_code_from_user()
+            if not single:
+                return {
+                    "error": True,
+                    "message": "No customer code found for current user"
+                }
+            customer_codes = [single]
         
         if not from_date or not to_date:
             return {
@@ -1112,7 +1137,7 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
         from_date_parsed = from_date.split('T')[0] if 'T' in str(from_date) else from_date
         to_date_parsed = to_date.split('T')[0] if 'T' in str(to_date) else to_date
         
-        # Fetch JL Entry records for this customer and date range
+        # Fetch JL Entry records for all customers and date range
         jl_entries = frappe.db.sql("""
             SELECT 
                 jdtnum,
@@ -1126,10 +1151,12 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
                 customer,
                 account_code
             FROM `tabSap JL Entry`
-            WHERE customer = %s
+            WHERE customer IN ({})
             AND posting_date BETWEEN %s AND %s
             ORDER BY posting_date ASC, jdtnum ASC, line_id ASC
-        """, (customer_code, from_date_parsed, to_date_parsed), as_dict=True)
+        """.format(', '.join(['%s'] * len(customer_codes))), 
+            tuple(customer_codes) + (from_date_parsed, to_date_parsed), 
+            as_dict=True)
         
         if not jl_entries:
             return {
@@ -1162,14 +1189,21 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
         total_debit = sum(t['debit'] for t in transactions)
         total_credit = sum(t['credit'] for t in transactions)
         
-        # Get customer name
-        customer_name = frappe.db.get_value("Customer", customer_code, "customer_name") or customer_code
+        # Get customer names (for all linked customers)
+        customer_names = []
+        for code in customer_codes:
+            name = frappe.db.get_value("Customer", code, "customer_name") or code
+            customer_names.append(name)
+        
+        # Format customer info display
+        customer_code_display = ", ".join(customer_codes) if len(customer_codes) > 1 else customer_codes[0]
+        customer_name_display = ", ".join(customer_names) if len(customer_names) > 1 else customer_names[0]
         
         return {
             "success": True,
             "data": {
-                "customer_code": customer_code,
-                "customer_name": customer_name,
+                "customer_code": customer_code_display,
+                "customer_name": customer_name_display,
                 "from_date": from_date_parsed,
                 "to_date": to_date_parsed,
                 "opening_balance": running_balance - (total_debit - total_credit),
