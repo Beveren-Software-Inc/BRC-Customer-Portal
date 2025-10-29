@@ -4,6 +4,16 @@ import frappe
 from frappe.utils.data import today, getdate
 import sap_customer_portal.sap_api_utils as sap_api_utils
 
+# Dashboard data limits - optimized for initial load performance
+# Dashboard uses:
+# - Summary: Only needs status counts (can work with subset)
+# - Recent Activities: Only shows top 5 most recent items
+# - Charts: Can work with reduced dataset
+# Reduced from 500 to minimize SAP API calls and response size
+DASHBOARD_INVOICE_LIMIT = 50   # Recent invoices for dashboard (full list available on invoice page)
+DASHBOARD_ORDER_LIMIT = 50     # Recent orders for dashboard (full list available on orders page)
+DASHBOARD_DELIVERY_NOTE_LIMIT = 50  # Recent delivery notes (full list available on delivery notes page)
+
 
 @frappe.whitelist()
 def clear_customer_cache():
@@ -164,6 +174,215 @@ def get_customer_delivery_notes():
             "message": f"Error fetching customer delivery notes: {str(e)}"
         }
 
+def _get_customer_codes_for_dashboard():
+    """Get customer codes for current user"""
+    get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+    codes = get_codes() if callable(get_codes) else []
+    if not codes:
+        single = sap_api_utils.get_customer_code_from_user()
+        if not single:
+            return None
+        codes = [single]
+    return codes
+
+def _initialize_sap_session():
+    """Initialize SAP session and return session cookies"""
+    session_cookies = sap_api_utils.get_or_create_sap_session()
+    if not session_cookies:
+        frappe.logger().error("[Dashboard] Failed to create SAP session")
+        return None
+    
+    session_id_preview = str(session_cookies.get('B1SESSION', 'N/A'))[:20] if hasattr(session_cookies, 'get') else 'N/A'
+    frappe.logger().info(f"[Dashboard] SAP session initialized. Session ID: {session_id_preview}...")
+    return session_cookies
+
+def _fetch_customer_data_for_code(code, invoice_limit=None, order_limit=None, delivery_note_limit=None):
+    """Fetch all data (balance, invoices, orders, delivery notes) for a single customer code
+    
+    Args:
+        code: Customer code
+        invoice_limit: Optional limit for invoices (defaults to DASHBOARD_INVOICE_LIMIT)
+        order_limit: Optional limit for orders (defaults to DASHBOARD_ORDER_LIMIT)
+        delivery_note_limit: Optional limit for delivery notes (defaults to DASHBOARD_DELIVERY_NOTE_LIMIT)
+    """
+    result = {
+        'balance': None,
+        'invoices': [],
+        'orders': [],
+        'delivery_notes': []
+    }
+    
+    # Use dashboard limits by default for faster initial load
+    invoice_limit = invoice_limit or DASHBOARD_INVOICE_LIMIT
+    order_limit = order_limit or DASHBOARD_ORDER_LIMIT
+    delivery_note_limit = delivery_note_limit or DASHBOARD_DELIVERY_NOTE_LIMIT
+    
+    try:
+        # Fetch balance (always needed, no limit)
+        balance = sap_api_utils.get_customer_balance_from_sap(code, session_cookies=None)
+        if balance is not None:
+            result['balance'] = balance
+        
+        # Fetch invoices with reduced limit for dashboard (recent items only)
+        invoices = sap_api_utils.get_customer_invoices_from_sap(code, limit=invoice_limit, session_cookies=None)
+        if invoices is not None and isinstance(invoices, list):
+            result['invoices'] = invoices
+        
+        # Fetch orders with reduced limit for dashboard (recent items only)
+        orders = sap_api_utils.get_customer_orders_from_sap(code, limit=order_limit, session_cookies=None)
+        if orders is not None and isinstance(orders, list):
+            result['orders'] = orders
+        
+        # Fetch delivery notes with reduced limit for dashboard (recent items only)
+        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=delivery_note_limit, session_cookies=None)
+        if delivery_notes is not None and isinstance(delivery_notes, list):
+            result['delivery_notes'] = delivery_notes
+            
+    except Exception as e:
+        import traceback
+        frappe.logger().error(f"[Dashboard] Error fetching data for {code}: {str(e)}")
+        frappe.log_error(f"[Dashboard] Error fetching data for {code}: {str(e)}\n{traceback.format_exc()}", "Dashboard Fetch Error")
+    
+    return result
+
+def _calculate_customer_info(balances):
+    """Calculate customer info from balance data"""
+    if not balances:
+        return {
+            "customer_code": None,
+            "customer_name": None,
+            "current_balance": 0,
+            "credit_limit": 0,
+        }
+    
+    total_balance = sum(b.get('current_balance', 0) or 0 for b in balances)
+    total_credit_limit = sum(b.get('credit_limit', 0) or 0 for b in balances)
+    
+    return {
+        "customer_code": ",".join([b.get("customer_code", "") for b in balances]),
+        "customer_name": balances[0].get("customer_name") if balances else None,
+        "current_balance": total_balance,
+        "credit_limit": total_credit_limit,
+    }
+
+def _calculate_invoice_summary(invoices):
+    """Calculate unreconciled and overdue invoice summaries
+    
+    Note: Summary is calculated from recent invoices (limited dataset).
+    For accurate totals, use the dedicated invoices page which fetches all records.
+    """
+    unreconciled_invoices = []
+    unreconciled_total = 0
+    
+    # Log status breakdown for debugging
+    statuses = {}
+    for inv in invoices:
+        status = inv.get('status', 'Unknown')
+        statuses[status] = statuses.get(status, 0) + 1
+    frappe.logger().info(f"[Dashboard] Invoice status breakdown (from {len(invoices)} recent invoices): {statuses}")
+    
+    # Calculate unreconciled (open with remaining balance) from available invoices
+    # Note: This is based on recent invoices only, not all historical records
+    for inv in invoices:
+        inv_status = str(inv.get('status', '')).strip()
+        if inv_status.lower() == 'open':
+            grand_total = inv.get('grand_total', 0) or 0
+            paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
+            remaining = grand_total - paid_amount
+            remaining = remaining if abs(remaining) > 1e-6 else 0  # Handle rounding
+            
+            if remaining > 0:
+                unreconciled_invoices.append(inv)
+                unreconciled_total += remaining
+    
+    # Calculate overdue invoices
+    today_date = getdate(today())
+    overdue_invoices = []
+    overdue_total = 0
+    
+    for inv in unreconciled_invoices:
+        due_date = inv.get('due_date')
+        if due_date and getdate(due_date) < today_date:
+            overdue_invoices.append(inv)
+            grand_total = inv.get('grand_total', 0) or 0
+            paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
+            remaining = grand_total - paid_amount
+            overdue_total += remaining if remaining > 0 else 0
+    
+    return {
+        'unreconciled_invoices': unreconciled_invoices,
+        'unreconciled_total': unreconciled_total,
+        'overdue_invoices': overdue_invoices,
+        'overdue_total': overdue_total,
+    }
+
+def _calculate_order_summary(orders):
+    """Calculate undelivered order summary
+    
+    Note: Summary is calculated from recent orders (limited dataset).
+    For accurate totals, use the dedicated orders page which fetches all records.
+    """
+    # Log status breakdown
+    statuses = {}
+    for order in orders:
+        status = order.get('status', 'Unknown')
+        statuses[status] = statuses.get(status, 0) + 1
+    frappe.logger().info(f"[Dashboard] Order status breakdown (from {len(orders)} recent orders): {statuses}")
+    
+    undelivered = [o for o in orders if str(o.get('status', '')).strip().lower() == 'open']
+    return {'undelivered_count': len(undelivered)}
+
+def _calculate_delivery_summary(delivery_notes):
+    """Calculate unbilled delivery summary
+    
+    Note: Summary is calculated from recent delivery notes (limited dataset).
+    For accurate totals, use the dedicated delivery notes page which fetches all records.
+    """
+    # Log status breakdown
+    statuses = {}
+    for dn in delivery_notes:
+        status = dn.get('status', 'Unknown')
+        statuses[status] = statuses.get(status, 0) + 1
+    frappe.logger().info(f"[Dashboard] Delivery note status breakdown (from {len(delivery_notes)} recent notes): {statuses}")
+    
+    unbilled = [dn for dn in delivery_notes if str(dn.get('status', '')).strip().lower() == 'open']
+    unbilled_total = sum(dn.get('grand_total', 0) or 0 for dn in unbilled)
+    
+    return {
+        'unbilled_count': len(unbilled),
+        'unbilled_total': unbilled_total,
+    }
+
+def _build_dashboard_result(customer_info, invoices, orders, delivery_notes, invoice_summary, order_summary, delivery_summary):
+    """Build the final dashboard result structure"""
+    return {
+        "success": True,
+        "data": {
+            "customer_info": customer_info,
+            "invoices": sorted(invoices, key=lambda i: i.get("posting_date") or "", reverse=True),
+            "orders": sorted(orders, key=lambda o: o.get("transaction_date") or "", reverse=True),
+            "delivery_notes": sorted(delivery_notes, key=lambda d: d.get("posting_date") or "", reverse=True),
+            "summary": {
+                "total_invoices": len(invoices),
+                "total_orders": len(orders),
+                "total_delivery_notes": len(delivery_notes),
+                # SAP logic keys
+                "unreconciled_invoices": len(invoice_summary['unreconciled_invoices']),
+                "unreconciled_total": invoice_summary['unreconciled_total'],
+                "overdue_invoices": len(invoice_summary['overdue_invoices']),
+                "overdue_total": invoice_summary['overdue_total'],
+                # Backward-compatible aliases
+                "unpaid_invoices": len(invoice_summary['unreconciled_invoices']),
+                "unpaid_total": invoice_summary['unreconciled_total'],
+                "undelivered_orders": order_summary['undelivered_count'],
+                "unbilled_deliveries": delivery_summary['unbilled_count'],
+                "unbilled_total": delivery_summary['unbilled_total'],
+                "current_balance": customer_info['current_balance'],
+                "credit_limit": customer_info['credit_limit'],
+            }
+        }
+    }
+
 @frappe.whitelist()
 def get_customer_dashboard_data():
     """Get all customer data for dashboard in one call across linked customer codes
@@ -171,10 +390,8 @@ def get_customer_dashboard_data():
     Uses extended cache duration (60 minutes) for dashboard data to improve performance.
     """
     try:
-        # Get current user for cache key
+        # Check cache first
         current_user = frappe.session.user
-        
-        # Check dashboard-level cache first (60 minute cache)
         dashboard_cache_key = f"dashboard_data_{current_user}"
         cached_dashboard = sap_api_utils.get_cached_data(
             dashboard_cache_key, 
@@ -182,107 +399,56 @@ def get_customer_dashboard_data():
         )
         
         if cached_dashboard is not None:
-            frappe.logger().info(f"[Dashboard] Returning cached dashboard data for user {current_user}")
             return cached_dashboard
         
-        frappe.logger().info(f"[Dashboard] Fetching fresh dashboard data for user {current_user}")
-        
-        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
-        codes = get_codes() if callable(get_codes) else []
+        # Get customer codes
+        codes = _get_customer_codes_for_dashboard()
         if not codes:
-            single = sap_api_utils.get_customer_code_from_user()
-            if not single:
-                return {"error": True, "message": "No customer code found for current user"}
-            codes = [single]
+            return {"error": True, "message": "No customer code found for current user"}
 
+        # Initialize SAP session
+        session_cookies = _initialize_sap_session()
+        if not session_cookies:
+            return {"error": True, "message": "Failed to connect to SAP B1"}
+
+        # Fetch all customer data
+        frappe.logger().info(f"[Dashboard] Fetching data for {len(codes)} customer(s)")
         balances, invoices, orders, delivery_notes = [], [], [], []
-        for code in codes:
-            b = sap_api_utils.get_customer_balance_from_sap(code)
-            if b:
-                balances.append(b)
-            invoices.extend(sap_api_utils.get_customer_invoices_from_sap(code, limit=500))
-            orders.extend(sap_api_utils.get_customer_orders_from_sap(code, limit=500))
-            delivery_notes.extend(sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=500))
-
-        total_current_balance = sum((b.get('current_balance', 0) for b in balances)) if balances else 0
-        total_credit_limit = sum((b.get('credit_limit', 0) for b in balances)) if balances else 0
-        customer_info = {
-            "customer_code": ",".join([b.get("customer_code", "") for b in balances]) if balances else None,
-            "customer_name": balances[0].get("customer_name") if balances else None,
-            "current_balance": total_current_balance,
-            "credit_limit": total_credit_limit,
-        }
-
-        total_invoices = len(invoices)
-        total_orders = len(orders)
-        total_delivery_notes = len(delivery_notes)
-
-        # Compute unreconciled (open) invoices using SAP fields
-        # Only two statuses from SAP are used: Open and Closed
-        # Remaining amount = grand_total - paid_amount (PaidToDate)
-        unreconciled_invoices = []
-        unreconciled_total = 0
-        for inv in invoices:
-            if inv.get('status') == 'Open':
-                grand_total = inv.get('grand_total', 0) or 0
-                paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
-                remaining = grand_total - paid_amount
-                # Treat tiny negatives as zero due to rounding
-                remaining = remaining if abs(remaining) > 1e-6 else 0
-                if remaining > 0:
-                    unreconciled_invoices.append(inv)
-                    unreconciled_total += remaining
-
-        today_date = getdate(today())
-        overdue_invoices = [inv for inv in unreconciled_invoices if inv.get('due_date') and getdate(inv.get('due_date')) < today_date]
-        overdue_total = 0
-        for inv in overdue_invoices:
-            grand_total = inv.get('grand_total', 0) or 0
-            paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
-            remaining = grand_total - paid_amount
-            overdue_total += remaining if remaining > 0 else 0
-
-        undelivered_orders = [order for order in orders if order.get('status') == 'Open']
-        undelivered_count = len(undelivered_orders)
-
-        unbilled_deliveries = [dn for dn in delivery_notes if dn.get('status') == 'Open']
-        unbilled_count = len(unbilled_deliveries)
-        unbilled_total = sum(dn.get('grand_total', 0) for dn in unbilled_deliveries)
-
-        result = {
-            "success": True,
-            "data": {
-                "customer_info": customer_info,
-                "invoices": sorted(invoices, key=lambda i: i.get("posting_date") or "", reverse=True),
-                "orders": sorted(orders, key=lambda o: o.get("transaction_date") or "", reverse=True),
-                "delivery_notes": sorted(delivery_notes, key=lambda d: d.get("posting_date") or "", reverse=True),
-                "summary": {
-                    "total_invoices": total_invoices,
-                    "total_orders": total_orders,
-                    "total_delivery_notes": total_delivery_notes,
-                    # New keys reflecting SAP logic
-                    "unreconciled_invoices": len(unreconciled_invoices),
-                    "unreconciled_total": unreconciled_total,
-                    "overdue_invoices": len(overdue_invoices),
-                    "overdue_total": overdue_total,
-                    # Backward-compatible aliases used by existing frontend
-                    "unpaid_invoices": len(unreconciled_invoices),
-                    "unpaid_total": unreconciled_total,
-                    "undelivered_orders": undelivered_count,
-                    "unbilled_deliveries": unbilled_count,
-                    "unbilled_total": unbilled_total,
-                    "current_balance": total_current_balance,
-                    "credit_limit": total_credit_limit,
-                }
-            }
-        }
         
-        # Cache the result with extended duration (60 minutes)
+        for code in codes:
+            data = _fetch_customer_data_for_code(code)
+            if data['balance']:
+                balances.append(data['balance'])
+            invoices.extend(data['invoices'])
+            orders.extend(data['orders'])
+            delivery_notes.extend(data['delivery_notes'])
+        
+        frappe.logger().info(f"[Dashboard] Fetched: {len(balances)} balance(s), {len(invoices)} invoice(s), {len(orders)} order(s), {len(delivery_notes)} delivery note(s)")
+        
+        # Calculate summaries
+        customer_info = _calculate_customer_info(balances)
+        invoice_summary = _calculate_invoice_summary(invoices)
+        order_summary = _calculate_order_summary(orders)
+        delivery_summary = _calculate_delivery_summary(delivery_notes)
+        
+        # Build result
+        result = _build_dashboard_result(
+            customer_info, invoices, orders, delivery_notes,
+            invoice_summary, order_summary, delivery_summary
+        )
+        
+        # Cache result
         sap_api_utils.set_cached_data(
             dashboard_cache_key, 
             result, 
             cache_duration=sap_api_utils.DASHBOARD_CACHE_DURATION
         )
+        
+        # Cleanup session
+        try:
+            sap_api_utils.cleanup_sap_session()
+        except Exception:
+            pass
         
         return result
         
