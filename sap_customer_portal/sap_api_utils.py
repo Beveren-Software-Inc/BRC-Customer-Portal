@@ -16,8 +16,13 @@ MAX_RETRIES = 3
 REQUEST_TIMEOUT = 60
 RETRY_DELAY = 1
 
-# Cache duration in seconds (5 minutes)
-CACHE_DURATION = 300
+# Cache duration in seconds
+# Dashboard/summary data can be cached longer since it's aggregated
+DASHBOARD_CACHE_DURATION = 3600  # 60 minutes for dashboard data
+# Individual document lists need fresher data
+CACHE_DURATION = 900  # 15 minutes for regular data (was 5 minutes)
+# Detail views need even fresher data
+DETAIL_CACHE_DURATION = 300  # 5 minutes for detail views
 
 def get_sap_b1_settings():
     """Get SAP B1 settings from the SAP B1 Settings doctype"""
@@ -120,26 +125,39 @@ def get_cache_key(customer_code, data_type):
     """Generate cache key for customer data"""
     return f"sap_customer_data_{customer_code}_{data_type}"
 
-def get_cached_data(cache_key):
-    """Get data from cache if it exists and is not expired"""
+def get_cached_data(cache_key, cache_duration=None):
+    """Get data from cache if it exists and is not expired
+    
+    Args:
+        cache_key: The cache key to retrieve
+        cache_duration: Override cache duration in seconds (defaults to CACHE_DURATION)
+    """
     try:
         cached_data = frappe.cache().get_value(cache_key)
         if cached_data:
             cache_time = cached_data.get('timestamp')
-            if cache_time and datetime.now() - datetime.fromisoformat(cache_time) < timedelta(seconds=CACHE_DURATION):
+            duration = cache_duration if cache_duration is not None else CACHE_DURATION
+            if cache_time and datetime.now() - datetime.fromisoformat(cache_time) < timedelta(seconds=duration):
                 return cached_data.get('data')
     except Exception as e:
         frappe.logger().warning(f"Cache retrieval error: {str(e)}")
     return None
 
-def set_cached_data(cache_key, data):
-    """Set data in cache with timestamp"""
+def set_cached_data(cache_key, data, cache_duration=None):
+    """Set data in cache with timestamp
+    
+    Args:
+        cache_key: The cache key to store
+        data: The data to cache
+        cache_duration: Override cache duration in seconds (defaults to CACHE_DURATION)
+    """
     try:
         cache_data = {
             'data': data,
             'timestamp': datetime.now().isoformat()
         }
-        frappe.cache().set_value(cache_key, cache_data, expires_in_sec=CACHE_DURATION)
+        duration = cache_duration if cache_duration is not None else CACHE_DURATION
+        frappe.cache().set_value(cache_key, cache_data, expires_in_sec=duration)
     except Exception as e:
         frappe.logger().warning(f"Cache storage error: {str(e)}")
 

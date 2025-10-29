@@ -7,8 +7,17 @@ import sap_customer_portal.sap_api_utils as sap_api_utils
 
 @frappe.whitelist()
 def clear_customer_cache():
-    """Clear all cached data for the current customer"""
+    """Clear all cached data for the current customer including dashboard cache"""
     try:
+        # Clear dashboard cache for current user
+        current_user = frappe.session.user
+        dashboard_cache_key = f"dashboard_data_{current_user}"
+        try:
+            frappe.cache().delete_value(dashboard_cache_key)
+            frappe.logger().info(f"Cleared dashboard cache for user {current_user}")
+        except Exception as e:
+            frappe.logger().warning(f"Error clearing dashboard cache: {str(e)}")
+        
         # Clear for all linked customer codes
         get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
         codes = get_codes() if callable(get_codes) else []
@@ -157,8 +166,27 @@ def get_customer_delivery_notes():
 
 @frappe.whitelist()
 def get_customer_dashboard_data():
-    """Get all customer data for dashboard in one call across linked customer codes"""
+    """Get all customer data for dashboard in one call across linked customer codes
+    
+    Uses extended cache duration (60 minutes) for dashboard data to improve performance.
+    """
     try:
+        # Get current user for cache key
+        current_user = frappe.session.user
+        
+        # Check dashboard-level cache first (60 minute cache)
+        dashboard_cache_key = f"dashboard_data_{current_user}"
+        cached_dashboard = sap_api_utils.get_cached_data(
+            dashboard_cache_key, 
+            cache_duration=sap_api_utils.DASHBOARD_CACHE_DURATION
+        )
+        
+        if cached_dashboard is not None:
+            frappe.logger().info(f"[Dashboard] Returning cached dashboard data for user {current_user}")
+            return cached_dashboard
+        
+        frappe.logger().info(f"[Dashboard] Fetching fresh dashboard data for user {current_user}")
+        
         get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
         codes = get_codes() if callable(get_codes) else []
         if not codes:
@@ -221,7 +249,7 @@ def get_customer_dashboard_data():
         unbilled_count = len(unbilled_deliveries)
         unbilled_total = sum(dn.get('grand_total', 0) for dn in unbilled_deliveries)
 
-        return {
+        result = {
             "success": True,
             "data": {
                 "customer_info": customer_info,
@@ -248,6 +276,15 @@ def get_customer_dashboard_data():
                 }
             }
         }
+        
+        # Cache the result with extended duration (60 minutes)
+        sap_api_utils.set_cached_data(
+            dashboard_cache_key, 
+            result, 
+            cache_duration=sap_api_utils.DASHBOARD_CACHE_DURATION
+        )
+        
+        return result
         
     except Exception as e:
         frappe.log_error(f"Error fetching customer dashboard data: {str(e)}", "Customer Portal")
