@@ -199,6 +199,9 @@ def _initialize_sap_session():
 def _fetch_customer_data_for_code(code, invoice_limit=None, order_limit=None, delivery_note_limit=None):
     """Fetch all data (balance, invoices, orders, delivery notes) for a single customer code
     
+    Uses graceful degradation: if one data fetch fails or times out, others continue.
+    Uses shorter timeout for dashboard calls to fail faster.
+    
     Args:
         code: Customer code
         invoice_limit: Optional limit for invoices (defaults to DASHBOARD_INVOICE_LIMIT)
@@ -217,31 +220,42 @@ def _fetch_customer_data_for_code(code, invoice_limit=None, order_limit=None, de
     order_limit = order_limit or DASHBOARD_ORDER_LIMIT
     delivery_note_limit = delivery_note_limit or DASHBOARD_DELIVERY_NOTE_LIMIT
     
+    # Gracefully fetch each data type independently - failures don't block others
+    # Fetch balance (always needed, no limit)
     try:
-        # Fetch balance (always needed, no limit)
         balance = sap_api_utils.get_customer_balance_from_sap(code, session_cookies=None)
         if balance is not None:
             result['balance'] = balance
-        
-        # Fetch invoices with reduced limit for dashboard (recent items only)
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Failed to fetch balance for {code}: {str(e)}")
+        # Continue even if balance fails
+    
+    # Fetch invoices with reduced limit for dashboard (recent items only)
+    try:
         invoices = sap_api_utils.get_customer_invoices_from_sap(code, limit=invoice_limit, session_cookies=None)
         if invoices is not None and isinstance(invoices, list):
             result['invoices'] = invoices
-        
-        # Fetch orders with reduced limit for dashboard (recent items only)
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Failed to fetch invoices for {code}: {str(e)}")
+        # Continue with empty invoices list
+    
+    # Fetch orders with reduced limit for dashboard (recent items only)
+    try:
         orders = sap_api_utils.get_customer_orders_from_sap(code, limit=order_limit, session_cookies=None)
         if orders is not None and isinstance(orders, list):
             result['orders'] = orders
-        
-        # Fetch delivery notes with reduced limit for dashboard (recent items only)
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Failed to fetch orders for {code}: {str(e)}")
+        # Continue with empty orders list
+    
+    # Fetch delivery notes with reduced limit for dashboard (recent items only)
+    try:
         delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=delivery_note_limit, session_cookies=None)
         if delivery_notes is not None and isinstance(delivery_notes, list):
             result['delivery_notes'] = delivery_notes
-            
     except Exception as e:
-        import traceback
-        frappe.logger().error(f"[Dashboard] Error fetching data for {code}: {str(e)}")
-        frappe.log_error(f"[Dashboard] Error fetching data for {code}: {str(e)}\n{traceback.format_exc()}", "Dashboard Fetch Error")
+        frappe.logger().warning(f"[Dashboard] Failed to fetch delivery notes for {code}: {str(e)}")
+        # Continue with empty delivery notes list
     
     return result
 
@@ -383,6 +397,70 @@ def _build_dashboard_result(customer_info, invoices, orders, delivery_notes, inv
         }
     }
 
+
+def _enqueue_background_prefetch(codes):
+    """Enqueue a background job to prefetch heavier datasets and warm caches.
+    Throttled per user via a short-lived cache key to avoid duplicate jobs.
+    """
+    try:
+        user = frappe.session.user
+        throttle_key = f"dashboard_prefetch_scheduled_{user}"
+        cache = frappe.cache()
+        if cache.get_value(throttle_key):
+            return
+        try:
+            cache.set_value(throttle_key, 1, expires_in_sec=900)  # 15 minutes
+        except Exception:
+            pass
+
+        frappe.enqueue(
+            "sap_customer_portal.api.customer_balance._background_prefetch_for_codes",
+            queue="long",
+            job_name=f"dashboard_prefetch_{user}",
+            now=False,
+            timeout=900,
+            codes=codes,
+        )
+    except Exception as e:
+        frappe.logger().error(f"[Prefetch] Failed to enqueue prefetch job: {str(e)}")
+
+
+def _background_prefetch_for_codes(codes):
+    """Background task: prefetch larger slices to warm caches for subsequent views.
+    Best-effort only; errors per dataset are logged and do not stop the job.
+    """
+    try:
+        if not codes:
+            return
+        frappe.logger().info(f"[Prefetch] Starting background cache warm for {len(codes)} code(s)")
+        prefetch_limit = 200
+        for code in codes:
+            try:
+                try:
+                    sap_api_utils.get_customer_payments_from_sap(code, limit=prefetch_limit)
+                except Exception as e:
+                    frappe.logger().warning(f"[Prefetch] Payments prefetch failed for {code}: {str(e)}")
+
+                try:
+                    sap_api_utils.get_customer_invoices_from_sap(code, limit=prefetch_limit)
+                except Exception as e:
+                    frappe.logger().warning(f"[Prefetch] Invoices prefetch failed for {code}: {str(e)}")
+
+                try:
+                    sap_api_utils.get_customer_orders_from_sap(code, limit=prefetch_limit)
+                except Exception as e:
+                    frappe.logger().warning(f"[Prefetch] Orders prefetch failed for {code}: {str(e)}")
+
+                try:
+                    sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=prefetch_limit)
+                except Exception as e:
+                    frappe.logger().warning(f"[Prefetch] Delivery notes prefetch failed for {code}: {str(e)}")
+            except Exception as inner_e:
+                frappe.logger().warning(f"[Prefetch] Unexpected error for {code}: {str(inner_e)}")
+        frappe.logger().info("[Prefetch] Background cache warm completed")
+    except Exception as e:
+        frappe.logger().error(f"[Prefetch] Background prefetch job failed: {str(e)}")
+
 @frappe.whitelist()
 def get_customer_dashboard_data():
     """Get all customer data for dashboard in one call across linked customer codes
@@ -443,6 +521,13 @@ def get_customer_dashboard_data():
             result, 
             cache_duration=sap_api_utils.DASHBOARD_CACHE_DURATION
         )
+        
+        # Enqueue background prefetch to warm caches for heavier datasets (non-blocking)
+        try:
+            _enqueue_background_prefetch(codes)
+        except Exception:
+            # Best-effort only; ignore prefetch enqueue failures
+            pass
         
         # Cleanup session
         try:

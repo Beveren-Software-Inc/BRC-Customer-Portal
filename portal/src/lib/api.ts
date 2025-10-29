@@ -428,8 +428,16 @@ export async function getCustomerBalance(): Promise<any> {
 }
 
 export async function getCustomerDashboardData(): Promise<any> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for dashboard
+  
   try {
-    const response = await fetch("/api/method/sap_customer_portal.api.customer_balance.get_customer_dashboard_data");
+    const response = await fetch("/api/method/sap_customer_portal.api.customer_balance.get_customer_dashboard_data", {
+      signal: controller.signal,
+      credentials: "include"
+    });
+    clearTimeout(timeoutId);
+    
     const data = await response.json();
     
     if (data.message && data.message.success) {
@@ -438,9 +446,14 @@ export async function getCustomerDashboardData(): Promise<any> {
       console.error("Error fetching dashboard data from SAP:", data.message?.message);
       return null;
     }
-  } catch (error) {
+  } catch (error: any) {
+    clearTimeout(timeoutId);
+    if (error.name === 'AbortError') {
+      console.error("Dashboard data fetch timeout after 60 seconds");
+      throw new Error("Request timed out. The SAP server may be slow. Please try again.");
+    }
     console.error("Error fetching dashboard data:", error);
-    return null;
+    throw error;
   }
 }
 // ---- Invoice Status Summary (server-aggregated) ----

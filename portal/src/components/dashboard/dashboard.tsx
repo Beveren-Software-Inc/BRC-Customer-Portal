@@ -156,7 +156,10 @@ export default function Dashboard() {
     queryFn: getCustomerDashboardData,
     staleTime: 1000 * 60 * 60, // 60 minutes
     refetchOnMount: true,
-    retry: 2,
+    retry: 1, // Reduced retries for faster failure on timeout
+    retryDelay: 2000, // 2 second delay between retries
+    // Graceful degradation: return partial data even if query fails
+    throwOnError: false, // Don't throw - allow partial rendering
   });
 
   // Extract SAP data from dashboard data using useMemo to prevent infinite loops
@@ -370,9 +373,11 @@ export default function Dashboard() {
         setError(null);
 
         // Use SAP dashboard data if available, otherwise fall back to ERPNext data
+        // Graceful degradation: work with partial data if some fields are missing
         let processedData;
         if (sapDashboardData) {
           // Use SAP dashboard data (contains all needed data: invoices, orders, delivery_notes, summary)
+          // Handle cases where some data might be missing due to partial failures/timeouts
           processedData = {
             invoices: sapDashboardData.invoices || [],
             salesOrders: sapDashboardData.orders || [],
