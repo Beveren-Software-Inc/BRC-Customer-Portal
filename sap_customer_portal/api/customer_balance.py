@@ -1425,7 +1425,25 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
         from_date_parsed = from_date.split('T')[0] if 'T' in str(from_date) else from_date
         to_date_parsed = to_date.split('T')[0] if 'T' in str(to_date) else to_date
         
-        # Fetch JL Entry records for all customers and date range
+        # Step 1: Calculate opening balance from all transactions BEFORE from_date
+        opening_balance_entries = frappe.db.sql("""
+            SELECT 
+                debit,
+                credit
+            FROM `tabSap JL Entry`
+            WHERE customer IN ({})
+            AND posting_date < %s
+            ORDER BY posting_date ASC, jdtnum ASC, line_id ASC
+        """.format(', '.join(['%s'] * len(customer_codes))), 
+            tuple(customer_codes) + (from_date_parsed,), 
+            as_dict=True)
+        
+        # Calculate opening balance (balance as of the day before from_date)
+        opening_balance = 0
+        for entry in opening_balance_entries:
+            opening_balance += (entry.debit or 0) - (entry.credit or 0)
+        
+        # Step 2: Fetch JL Entry records for all customers and date range
         jl_entries = frappe.db.sql("""
             SELECT 
                 jdtnum,
@@ -1446,16 +1464,27 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
             tuple(customer_codes) + (from_date_parsed, to_date_parsed), 
             as_dict=True)
         
-        if not jl_entries:
-            return {
-                "error": True,
-                "message": "No transactions found for the selected date range"
-            }
-        
-        # Calculate running balance
+        # Step 3: Calculate running balance starting from opening balance
         transactions = []
-        running_balance = 0
+        running_balance = opening_balance  # Start with opening balance
         
+        # Add opening balance entry (show if non-zero or if no transactions in range)
+        if opening_balance != 0 or (jl_entries is None or len(jl_entries) == 0):
+            transactions.append({
+                'date': from_date_parsed,
+                'type': 'Opening Balance',
+                'number': '',
+                'description': f'Opening Balance as of {from_date_parsed}',
+                'debit': opening_balance if opening_balance > 0 else 0,
+                'credit': abs(opening_balance) if opening_balance < 0 else 0,
+                'balance': opening_balance,
+                'status': 'Closed',
+                'account_code': '',
+                'jdtnum': '',
+                'line_id': ''
+            })
+        
+        # Process transactions in the date range
         for entry in jl_entries:
             running_balance += (entry.debit or 0) - (entry.credit or 0)
             
@@ -1473,9 +1502,9 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
                 'line_id': entry.line_id
             })
         
-        # Calculate summary
-        total_debit = sum(t['debit'] for t in transactions)
-        total_credit = sum(t['credit'] for t in transactions)
+        # Calculate summary (exclude opening balance entry from totals)
+        total_debit = sum(t['debit'] for t in transactions if t.get('type') != 'Opening Balance')
+        total_credit = sum(t['credit'] for t in transactions if t.get('type') != 'Opening Balance')
         
         # Get customer names (for all linked customers)
         customer_names = []
@@ -1494,8 +1523,8 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
                 "customer_name": customer_name_display,
                 "from_date": from_date_parsed,
                 "to_date": to_date_parsed,
-                "opening_balance": running_balance - (total_debit - total_credit),
-                "closing_balance": running_balance,
+                "opening_balance": opening_balance,  # Balance as of the day before from_date
+                "closing_balance": running_balance,  # Final balance after all transactions in range
                 "transactions": transactions,
                 "summary": {
                     "total_transactions": len(transactions),
