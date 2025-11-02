@@ -1,6 +1,7 @@
 
 
 import frappe
+import os
 from frappe.utils.data import today, getdate
 import sap_customer_portal.sap_api_utils as sap_api_utils
 
@@ -546,7 +547,7 @@ def get_customer_dashboard_data():
 
 @frappe.whitelist()
 def get_customer_order_detail(doc_num: str = None):
-    """Get a single customer sales order with items from SAP B1 by DocNum"""
+    """Get a single customer sales order with items from SAP B1 by DocNum, enriched with customer info from Frappe"""
     try:
         frappe.logger().info(f"[API] get_customer_order_detail called with doc_num: {doc_num}")
         customer_code = sap_api_utils.get_customer_code_from_user()
@@ -558,6 +559,17 @@ def get_customer_order_detail(doc_num: str = None):
         detail = sap_api_utils.get_customer_order_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Order not found"}
+        
+        # Enrich with customer information from Frappe
+        customer_info = get_customer_info_from_frappe(customer_code)
+        if customer_info:
+            detail.update(customer_info)
+        
+        # Add logo paths from site files
+        logo_info = get_logo_paths()
+        if logo_info:
+            detail.update(logo_info)
+        
         return {"success": True, "data": detail}
     except Exception as e:
         frappe.log_error(f"Error fetching order detail: {str(e)}", "Customer Portal")
@@ -566,7 +578,7 @@ def get_customer_order_detail(doc_num: str = None):
 
 @frappe.whitelist()
 def get_customer_delivery_note_detail(doc_num: str = None):
-    """Get a single customer delivery note with items from SAP B1 by DocNum"""
+    """Get a single customer delivery note with items from SAP B1 by DocNum, enriched with customer info from Frappe"""
     try:
         frappe.logger().info(f"[API] get_customer_delivery_note_detail called with doc_num: {doc_num}")
         customer_code = sap_api_utils.get_customer_code_from_user()
@@ -578,6 +590,17 @@ def get_customer_delivery_note_detail(doc_num: str = None):
         detail = sap_api_utils.get_customer_delivery_note_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Delivery note not found"}
+        
+        # Enrich with customer information from Frappe
+        customer_info = get_customer_info_from_frappe(customer_code)
+        if customer_info:
+            detail.update(customer_info)
+        
+        # Add logo paths from site files
+        logo_info = get_logo_paths()
+        if logo_info:
+            detail.update(logo_info)
+        
         return {"success": True, "data": detail}
     except Exception as e:
         frappe.log_error(f"Error fetching delivery note detail: {str(e)}", "Customer Portal")
@@ -898,7 +921,7 @@ def get_invoice_status_summary(period: str = "12months"):
 
 @frappe.whitelist()
 def get_customer_invoice_detail(doc_num: str = None):
-    """Get a single customer invoice with items from SAP B1 by DocNum"""
+    """Get a single customer invoice with items from SAP B1 by DocNum, enriched with customer info from Frappe"""
     
     try:
         customer_code = sap_api_utils.get_customer_code_from_user()
@@ -906,13 +929,174 @@ def get_customer_invoice_detail(doc_num: str = None):
             return {"error": True, "message": "No customer code found for current user"}
         if not doc_num:
             return {"error": True, "message": "Missing doc_num"}
+        
+        # Get invoice detail from SAP
         detail = sap_api_utils.get_customer_invoice_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Invoice not found"}
+        
+        # Enrich with customer information from Frappe
+        customer_info = get_customer_info_from_frappe(customer_code)
+        if customer_info:
+            detail.update(customer_info)
+        
+        # Add logo paths from site files
+        logo_info = get_logo_paths()
+        if logo_info:
+            detail.update(logo_info)
+        
         return {"success": True, "data": detail}
     except Exception as e:
         frappe.log_error(f"Error fetching invoice detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching invoice detail: {str(e)}"}
+
+
+def get_logo_paths():
+    """Get logo file paths from Frappe site files directory"""
+    try:
+        logo_info = {}
+        
+        # Get site path
+        site_path = frappe.get_site_path()
+        files_path = os.path.join(site_path, "public", "files")
+        
+        # Check for BRC logo
+        brc_logo_path = os.path.join(files_path, "brc_logo.jpeg")
+        if os.path.exists(brc_logo_path):
+            logo_info['brc_logo_url'] = "/files/brc_logo.jpeg"
+        else:
+            # Fallback: check for brc_logo in different formats
+            for ext in ['.jpeg', '.jpg', '.png']:
+                logo_path = os.path.join(files_path, f"brc_logo{ext}")
+                if os.path.exists(logo_path):
+                    logo_info['brc_logo_url'] = f"/files/brc_logo{ext}"
+                    break
+        
+        # Check for Vision 2030 logo
+        vision_logo_path = os.path.join(files_path, "vision2030_logo.png")
+        if os.path.exists(vision_logo_path):
+            logo_info['vision2030_logo_url'] = "/files/vision2030_logo.png"
+        else:
+            # Fallback: check for vision2030_logo in different formats
+            for ext in ['.png', '.jpg', '.jpeg']:
+                logo_path = os.path.join(files_path, f"vision2030_logo{ext}")
+                if os.path.exists(logo_path):
+                    logo_info['vision2030_logo_url'] = f"/files/vision2030_logo{ext}"
+                    break
+        
+        return logo_info
+        
+    except Exception as e:
+        frappe.logger().error(f"Error getting logo paths: {str(e)}")
+        return {}
+
+
+def get_customer_info_from_frappe(customer_code: str):
+    """Get customer information from Frappe/ERPNext including addresses and contacts"""
+    try:
+        customer_info = {}
+        
+        # Get customer document
+        if frappe.db.exists("Customer", customer_code):
+            customer_doc = frappe.get_doc("Customer", customer_code)
+            customer_info['customer_name'] = customer_doc.customer_name or customer_code
+            
+            # Get primary address
+            addresses = frappe.db.sql("""
+                SELECT 
+                    name,
+                    address_line1,
+                    address_line2,
+                    city,
+                    state,
+                    pincode,
+                    country,
+                    address_title,
+                    address_type
+                FROM `tabAddress`
+                WHERE name IN (
+                    SELECT parent 
+                    FROM `tabDynamic Link` 
+                    WHERE link_doctype = 'Customer' 
+                    AND link_name = %s
+                )
+                ORDER BY 
+                    CASE WHEN address_type = 'Billing' THEN 1 
+                         WHEN address_type = 'Shipping' THEN 2 
+                         ELSE 3 END,
+                    is_primary_address DESC,
+                    creation DESC
+                LIMIT 1
+            """, (customer_code,), as_dict=True)
+            
+            if addresses:
+                addr = addresses[0]
+                address_parts = []
+                if addr.address_line1:
+                    address_parts.append(addr.address_line1)
+                if addr.address_line2:
+                    address_parts.append(addr.address_line2)
+                if addr.city:
+                    address_parts.append(addr.city)
+                if addr.state:
+                    address_parts.append(addr.state)
+                if addr.pincode:
+                    address_parts.append(addr.pincode)
+                if addr.country:
+                    address_parts.append(addr.country)
+                
+                customer_info['address_display'] = ", ".join(address_parts)
+                customer_info['customer_address'] = addr.name
+                customer_info['shipping_address'] = addr.name
+            
+            # Get shipping address separately if different
+            shipping_addresses = frappe.db.sql("""
+                SELECT 
+                    address_line1,
+                    address_line2,
+                    city,
+                    state,
+                    pincode,
+                    country
+                FROM `tabAddress`
+                WHERE name IN (
+                    SELECT parent 
+                    FROM `tabDynamic Link` 
+                    WHERE link_doctype = 'Customer' 
+                    AND link_name = %s
+                )
+                AND address_type = 'Shipping'
+                ORDER BY is_primary_address DESC, creation DESC
+                LIMIT 1
+            """, (customer_code,), as_dict=True)
+            
+            if shipping_addresses:
+                addr = shipping_addresses[0]
+                address_parts = []
+                if addr.address_line1:
+                    address_parts.append(addr.address_line1)
+                if addr.address_line2:
+                    address_parts.append(addr.address_line2)
+                if addr.city:
+                    address_parts.append(addr.city)
+                if addr.state:
+                    address_parts.append(addr.state)
+                if addr.pincode:
+                    address_parts.append(addr.pincode)
+                if addr.country:
+                    address_parts.append(addr.country)
+                
+                customer_info['shipping_address_display'] = ", ".join(address_parts)
+            
+            # Get tax ID if available
+            if hasattr(customer_doc, 'tax_id') and customer_doc.tax_id:
+                customer_info['customer_tax_id'] = customer_doc.tax_id
+        
+        return customer_info
+        
+    except Exception as e:
+        frappe.logger().error(f"Error fetching customer info from Frappe: {str(e)}")
+        return {}
 
 
 @frappe.whitelist()

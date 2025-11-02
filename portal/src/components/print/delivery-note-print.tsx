@@ -1,6 +1,7 @@
 import React from "react";
 import { DeliveryNote } from "@/lib/api";
 import { formatDate } from "@/lib/utils";
+import { QRCodeSVG } from "qrcode.react";
 import "./print-style.css";
 
 interface DeliveryNotePrintProps {
@@ -17,9 +18,6 @@ export const DeliveryNotePrint = ({
     window.print();
   };
   
-  // Calculate subtotal
-  const subtotal = deliveryNote.items.reduce((sum, item) => sum + item.amount, 0);
-  
   // Format currency with commas and 2 decimal places
   const formatCurrency = (amount: number) => {
     return new Intl.NumberFormat('en-US', { 
@@ -28,8 +26,12 @@ export const DeliveryNotePrint = ({
     }).format(amount);
   };
   
-  // Extract company name from deliveryNote data or use default
-  const companyName = deliveryNote.company || "Your Company";
+  // Generate QR code data
+  const qrCodeData = JSON.stringify({
+    deliveryNote: deliveryNote.name,
+    date: deliveryNote.posting_date,
+    customer: deliveryNote.customer
+  });
   
   return (
     <div className="print-container">
@@ -40,113 +42,307 @@ export const DeliveryNotePrint = ({
       )}
       
       <div className="print-document">
-        {/* Simplified Header */}
-        <header className="print-header">
-          <div className="company-info-centered">
-            <h1>{companyName}</h1>
-            {deliveryNote.company_email && <p>{deliveryNote.company_email}</p>}
-          </div>
-        </header>
-        
-        {/* Document Title */}
-        <div className="document-title">
-          <h2>Delivery Note</h2>
-          <div className="document-number">{deliveryNote.name}</div>
-        </div>
-        
-        {/* Delivery Info */}
-        <div className="order-meta">
-          <div className="order-meta-grid">
-            <div>
-              <strong>Customer:</strong>
-              <p>{deliveryNote.customer}</p>
-              {deliveryNote.shipping_address && <p className="meta-address">{deliveryNote.shipping_address}</p>}
+        {/* Header Section */}
+        <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "20px" }}>
+          {/* Left Column: BRC Logo and Address */}
+          <div style={{ flex: "0 0 32%", marginRight: "15px" }}>
+            <div style={{ marginBottom: "8px" }}>
+              {deliveryNote.brc_logo_url ? (
+                <img 
+                  src={deliveryNote.brc_logo_url}
+                  alt="BRC Logo"
+                  style={{ height: "50px", maxWidth: "100%" }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div style={{ height: "50px", backgroundColor: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "10px" }}>BRC Logo</div>
+              )}
             </div>
             
-            <div>
-              <strong>Delivery Date:</strong>
-              <p>{formatDate(deliveryNote.posting_date)}</p>
+            <div style={{ fontSize: "11px", lineHeight: "1.4", color: "#222" }}>
+              <strong>BRC Industrial Saudia Co.</strong><br />
+              P.O Box 5489 Jeddah 21422 - Saudi Arabia<br />
+              C.R.: 4030008649<br />
+              COC: 1712<br />
+              Tel: Jeddah (012) 6355666 / 6358145/67/78<br />
+              Tel: Riyadh (011) 4620703 / 4602692<br />
+              Tel: Dammam (013) 8082954<br />
+              Fax: Jeddah (012) 6375474<br />
+              Fax: Dammam (013) 8124103<br />
+              www.brc.com.sa<br />
+              email: brcsales@brc.com.sa
+            </div>
+          </div>
+          
+          {/* Center Column: Title */}
+          <div style={{ flex: "0 0 32%", textAlign: "center" }}>
+            <div style={{ 
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "12px",
+              fontSize: "16px",
+              fontWeight: "bold"
+            }}>
+              <span>Delivery Note</span>
+              <span style={{ direction: "rtl" }}>سند التسليم</span>
             </div>
             
-            <div>
-              <strong>Status:</strong>
-              <p className={`status-badge status-${deliveryNote.status?.toLowerCase().replace(/\s+/g, "-")}`}>
-                {deliveryNote.status}
-              </p>
-              
-              <strong>Currency:</strong>
-              <p>{deliveryNote.currency}</p>
+            <div style={{ 
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              marginBottom: "8px",
+              fontSize: "11px"
+            }}>
+              <strong style={{ fontSize: "10px" }}>Delivery No:</strong>
+              <span style={{ margin: "0 10px", fontSize: "11px" }}>{deliveryNote.name || "-"}</span>
+              <span style={{ direction: "rtl", fontSize: "10px" }}>رقم التسليم</span>
+            </div>
+            
+            <div style={{ 
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+              fontSize: "11px"
+            }}>
+              <strong style={{ fontSize: "10px" }}>Date:</strong>
+              <span style={{ margin: "0 10px", fontSize: "11px" }}>{formatDate(deliveryNote.posting_date)}</span>
+              <span style={{ direction: "rtl", fontSize: "10px" }}>التاريخ</span>
+            </div>
+          </div>
+          
+          {/* Right Column: Vision 2030 Logo and Arabic Address */}
+          <div style={{ flex: "0 0 32%", textAlign: "right", paddingLeft: "10px" }}>
+            <div style={{ marginBottom: "8px", textAlign: "right", display: "flex", justifyContent: "flex-end" }}>
+              {deliveryNote.vision2030_logo_url ? (
+                <img 
+                  src={deliveryNote.vision2030_logo_url}
+                  alt="Vision 2030 Logo"
+                  style={{ height: "50px", maxWidth: "100%", marginLeft: "auto" }}
+                  onError={(e) => {
+                    (e.target as HTMLImageElement).style.display = 'none';
+                  }}
+                />
+              ) : (
+                <div style={{ height: "50px", backgroundColor: "#f0f0f0", display: "flex", alignItems: "center", justifyContent: "center", fontSize: "8px", marginLeft: "auto" }}>Vision 2030</div>
+              )}
+            </div>
+            
+            <div style={{ fontSize: "11px", lineHeight: "1.4", color: "#222", direction: "rtl", textAlign: "right" }}>
+              <strong>شركة بي آر سي الصناعية السعودية المحدودة</strong><br />
+              ص.ب 5489 جدة 21422 - المملكة العربية السعودية<br />
+              س.ت: 4030008649<br />
+              1712<br />
+              هاتف: جدة (012) 6355666 / 6358145/67/78<br />
+              هاتف: الرياض (011) 4620703 / 4602692<br />
+              هاتف: الدمام (013) 8082954<br />
+              فاكس: جدة (012) 6375474<br />
+              فاكس: الدمام (013) 8124103<br />
+              www.brc.com.sa<br />
+              email: brcsales@brc.com.sa
             </div>
           </div>
         </div>
         
-        {/* Fixed Table Structure */}
-        <table className="items-table">
+        {/* Horizontal Line */}
+        <hr style={{ borderTop: "2px solid #333", margin: "20px 0" }} />
+        
+        {/* Customer Information Table */}
+        <table style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          marginBottom: "20px",
+          fontSize: "11px",
+          border: "1px solid #ddd"
+        }}>
           <thead>
+            <tr style={{ backgroundColor: "#f5f5f5" }}>
+              <th style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left" }}>Customer / العميل</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left" }}>Ship To / شحن إلى</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left" }}>Your Order No / رقم طلبكم</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left" }}>Date / التاريخ</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left" }}>Our Ref. No / مرجعنا رقم</th>
+              <th style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left" }}>Notes / ملاحظات</th>
+            </tr>
+          </thead>
+          <tbody>
             <tr>
-              <th>Item Code</th>
-              <th>Description</th>
-              <th className="text-right">Quantity</th>
-              <th className="text-right">Rate</th>
-              <th className="text-right">Amount</th>
+              <td style={{ border: "1px solid #ddd", padding: "8px", verticalAlign: "top" }}>
+                <div style={{ marginBottom: "5px", fontWeight: "bold" }}>{deliveryNote.customer_name || deliveryNote.customer || "-"}</div>
+                <div style={{ fontSize: "10px", whiteSpace: "pre-wrap" }}>
+                  {deliveryNote.address_display || "-"}
+                </div>
+              </td>
+              <td style={{ border: "1px solid #ddd", padding: "8px", verticalAlign: "top" }}>
+                <div style={{ fontSize: "10px", whiteSpace: "pre-wrap" }}>
+                  {deliveryNote.shipping_address_display || deliveryNote.address_display || "-"}
+                </div>
+              </td>
+              <td style={{ border: "1px solid #ddd", padding: "8px" }}>
+                {deliveryNote.po_no || "-"}
+              </td>
+              <td style={{ border: "1px solid #ddd", padding: "8px" }}>
+                {formatDate(deliveryNote.posting_date)}
+              </td>
+              <td style={{ border: "1px solid #ddd", padding: "8px" }}>
+                {deliveryNote.customer_po_no || "-"}
+              </td>
+              <td style={{ border: "1px solid #ddd", padding: "8px", fontSize: "10px" }}>
+                Based on Sales Orders {deliveryNote.sales_order || "-"}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+        
+        {/* Items Table */}
+        <table style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          marginBottom: "20px",
+          border: "1px solid #ddd"
+        }}>
+          <thead>
+            <tr style={{ backgroundColor: "#f5f5f5" }}>
+              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "12px", fontWeight: "bold" }}>
+                Part no.<br />
+                <span style={{ direction: "rtl", fontSize: "12px" }}>رقم القطعة</span>
+              </th>
+              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "12px", fontWeight: "bold" }}>
+                Description<br />
+                <span style={{ direction: "rtl", fontSize: "12px" }}>الوصف</span>
+              </th>
+              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "12px", fontWeight: "bold", textAlign: "right" }}>
+                Quantity<br />
+                <span style={{ direction: "rtl", fontSize: "12px" }}>الكمية</span>
+              </th>
+              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "12px", fontWeight: "bold" }}>
+                Unit<br />
+                <span style={{ direction: "rtl", fontSize: "12px" }}>الوحدة</span>
+              </th>
             </tr>
           </thead>
           <tbody>
             {deliveryNote.items.map((item, index) => (
               <tr key={index}>
-                <td>{item.item_code}</td>
-                <td>
-                  <div className="item-name">{item.item_name}</div>
-                  {item.description && item.description !== item.item_name && (
-                    <div className="item-description">{item.description}</div>
-                  )}
+                <td style={{ border: "1px solid #ddd", padding: "8px" }}>{item.item_code || "-"}</td>
+                <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left" }}>
+                  {item.description || item.item_name || "-"}
                 </td>
-                <td className="text-right">{item.qty}</td>
-                <td className="text-right">
-                  {deliveryNote.currency} {formatCurrency(item.rate)}
+                <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right" }}>
+                  {Math.round(item.qty || 0).toLocaleString()}
                 </td>
-                <td className="text-right">
-                  {deliveryNote.currency} {formatCurrency(item.amount)}
-                </td>
+                <td style={{ border: "1px solid #ddd", padding: "8px" }}>{item.uom || "-"}</td>
               </tr>
             ))}
           </tbody>
         </table>
         
-        {/* Totals */}
-        <div className="order-totals">
-          <div className="totals-row">
-            <span>Subtotal:</span>
-            <span>{deliveryNote.currency} {formatCurrency(subtotal)}</span>
+        {/* Bottom Section with QR and Signature */}
+        <div style={{ display: "flex", marginTop: "40px" }}>
+          {/* Left Section - Receiver Details */}
+          <div style={{ flex: "0 0 33%" }}>
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <strong style={{ fontSize: "9px" }}>RECEIVED BY: </strong>
+                <span style={{ margin: "0 10px", fontSize: "9px" }}>{deliveryNote.sap_receiver_name || "-"}</span>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>استلم من</span>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <strong style={{ fontSize: "9px" }}>SIGNATURE:</strong>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>التوقيع</span>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <strong style={{ fontSize: "9px" }}>STAMP:</strong>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>الختم</span>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <strong style={{ fontSize: "9px" }}>Date:</strong>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>التاريخ</span>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
+                <strong style={{ fontSize: "9px" }}>MOBILE:</strong>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>الجوال</span>
+              </div>
+            </div>
           </div>
           
-          <div className="totals-row">
-            <span>Taxes & Charges:</span>
-            <span>{deliveryNote.currency} {formatCurrency(deliveryNote.total_taxes_and_charges || 0)}</span>
+          {/* Center Section - QR Code */}
+          <div style={{ flex: "0 0 33%", textAlign: "center" }}>
+            {deliveryNote.qr_code ? (
+              <img 
+                src={`data:image/png;base64,${deliveryNote.qr_code}`}
+                alt="QR Code"
+                style={{ width: "100px", height: "100px" }}
+              />
+            ) : (
+              <div style={{ display: "inline-block", padding: "8px", border: "1px solid #E5E7EB", borderRadius: "4px" }}>
+                <QRCodeSVG 
+                  value={qrCodeData}
+                  size={100}
+                  level="M"
+                  includeMargin={false}
+                />
+              </div>
+            )}
           </div>
           
-          <div className="totals-row grand-total">
-            <span>TOTAL:</span>
-            <span>{deliveryNote.currency} {formatCurrency(deliveryNote.grand_total)}</span>
+          {/* Right Section - Driver Details */}
+          <div style={{ flex: "0 0 33%" }}>
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "9px" }}>CARRIER:</strong>
+                <span style={{ margin: "0 10px", fontSize: "9px" }}>{deliveryNote.sap_carrier || "-"}</span>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>الناقل</span>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "9px" }}>DRIVER NAME:</strong>
+                <span style={{ margin: "0 10px", fontSize: "9px" }}>{deliveryNote.sap_driver_name || "-"}</span>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>اسم السائق</span>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "9px" }}>TRUCK NO:</strong>
+                <span style={{ margin: "0 10px", fontSize: "9px" }}>{deliveryNote.sap_truck_no || "-"}</span>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>رقم الشاحنة</span>
+              </div>
+            </div>
+            
+            <div style={{ marginBottom: "16px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <strong style={{ fontSize: "9px" }}>MOBILE NO:</strong>
+                <span style={{ margin: "0 10px", fontSize: "9px" }}>{deliveryNote.sap_mobile_no || "-"}</span>
+                <span style={{ direction: "rtl", fontSize: "9px" }}>رقم الجوال</span>
+              </div>
+            </div>
           </div>
         </div>
         
-        {/* Notes & Terms */}
-        {deliveryNote.terms && (
-          <div className="order-notes">
-            <h3>Terms and Conditions</h3>
-            <p>{deliveryNote.terms}</p>
-          </div>
-        )}
-        
-        {/* Add clear div to ensure footer spacing */}
-        <div style={{ clear: "both", marginBottom: "20px" }}></div>
-        
-        {/* Footer */}
-        <footer className="print-footer">
-          <p>Thank you for your business!</p>
-          <p className="text-muted">This is a computer-generated document. No signature is required.</p>
-        </footer>
+        {/* Footer Notes */}
+        <div style={{ marginTop: "30px", fontSize: "11px", color: "#222" }}>
+          <strong>Important Note:</strong> - Any discrepancies should be notified in writing within 48 hours of delivery.<br />
+          <span style={{ marginLeft: "100px" }}>- All material will remain the property of company until the invoice paid in full</span><br />
+          <span style={{ marginLeft: "100px" }}>- Payments received will be receipted against oldest invoices outstanding if details of which invoice are being paid are not provided with payment.</span>
+        </div>
       </div>
     </div>
   );

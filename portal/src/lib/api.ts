@@ -109,8 +109,22 @@ export interface SalesOrder {
   per_delivered?: number;
   per_billed?: number;
   delivery_date?: string;
+  valid_till?: string;
   total_taxes_and_charges?: number;
+  net_total?: number;
   total_qty?: number;
+  tax_id?: string;
+  customer_tax_id?: string;
+  po_no?: string;
+  contact_person?: string;
+  address_display?: string;
+  shipping_address_display?: string;
+  carry_over?: number;
+  shipping_type?: string;
+  remarks?: string;
+  allow_partial_delivery?: boolean;
+  brc_logo_url?: string;
+  vision2030_logo_url?: string;
 }
 
 export async function getSapSalesOrderDetail(docNum: string): Promise<SalesOrder | null> {
@@ -222,11 +236,15 @@ export interface SalesInvoice {
   company?: string;
   tax_id?: string;
   address_display?: string;
+  shipping_address_display?: string;
   contact_display?: string;
   contact_email?: string;
   total_taxes_and_charges?: number;
   is_return?: number;
   return_against?: string;
+  customer_tax_id?: string;
+  brc_logo_url?: string;
+  vision2030_logo_url?: string;
 }
 
 // Alias for SAP invoices
@@ -258,6 +276,35 @@ export interface SalesItem {
 
 // Additional interfaces
 export interface DeliveryNote {
+  name: string;
+  customer: string;
+  customer_name?: string;
+  posting_date: string;
+  grand_total: number;
+  status: string;
+  currency: string;
+  items: SalesItem[];
+  total_taxes_and_charges?: number;
+  net_total?: number;
+  tax_id?: string;
+  customer_tax_id?: string;
+  po_no?: string;
+  customer_po_no?: string;
+  sales_order?: string;
+  shipping_address?: string;
+  shipping_address_display?: string;
+  address_display?: string;
+  sap_receiver_name?: string;
+  sap_carrier?: string;
+  sap_driver_name?: string;
+  sap_truck_no?: string;
+  sap_mobile_no?: string;
+  qr_code?: string;
+  brc_logo_url?: string;
+  vision2030_logo_url?: string;
+}
+
+export interface DeliveryNoteOld {
   name: string;
   sap_doc_entry?: number;
   customer: string;

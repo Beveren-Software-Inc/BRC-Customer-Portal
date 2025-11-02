@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { SalesOrder, getDocumentByName } from "@/lib/api"
+import { useRef } from "react"
+import { SalesOrder } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -9,43 +9,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Loader2, Download, Printer, XCircle } from "lucide-react"
+import { Download, Printer, XCircle } from "lucide-react"
 import SalesOrderPrint from "./sales-order-print"
 import { toast } from "@/components/ui/use-toast"
 
 interface PrintPreviewDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  orderId: string;
+  order: SalesOrder | null;
 }
 
-export default function PrintPreviewDialog({ isOpen, onClose, orderId }: PrintPreviewDialogProps) {
-  const [order, setOrder] = useState<SalesOrder | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export default function PrintPreviewDialog({ isOpen, onClose, order }: PrintPreviewDialogProps) {
   const printContentRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  useEffect(() => {
-    async function fetchOrderDetail() {
-      if (!orderId || !isOpen) return;
-
-      try {
-        setLoading(true);
-        const data = await getDocumentByName<SalesOrder>("Sales Order", orderId);
-        setOrder(data);
-        setError(null);
-      } catch (err) {
-        console.error('Failed to fetch order details:', err);
-        setError("Could not load order details. Please try again later.");
-        setOrder(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchOrderDetail();
-  }, [orderId, isOpen]);
 
   const handlePrint = () => {
     // Create a dedicated print window with controlled CSS
@@ -78,7 +54,7 @@ export default function PrintPreviewDialog({ isOpen, onClose, orderId }: PrintPr
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Print - Sales Order ${orderId}</title>
+        <title>Print - Sales Order ${order?.name || ''}</title>
         <link rel="stylesheet" href="${stylesheetUrl}" type="text/css">
         <style>
           @page { 
@@ -167,36 +143,6 @@ export default function PrintPreviewDialog({ isOpen, onClose, orderId }: PrintPr
     });
   };
 
-  // Add an invisible iframe for print (alternative approach)
-  useEffect(() => {
-    if (!isOpen || !order || !iframeRef.current || !printContentRef.current) return;
-    
-    try {
-      const iframe = iframeRef.current;
-      const doc = iframe.contentDocument || (iframe.contentWindow?.document);
-      
-      if (doc) {
-        doc.open();
-        doc.write(`
-          <!DOCTYPE html>
-          <html>
-          <head>
-            <title>Print - Sales Order ${orderId}</title>
-            <link rel="stylesheet" href="${window.location.origin}/src/components/print/print-style.css">
-          </head>
-          <body>
-            <div class="print-container">
-              ${printContentRef.current.innerHTML}
-            </div>
-          </body>
-          </html>
-        `);
-        doc.close();
-      }
-    } catch (error) {
-      console.error("Failed to prepare iframe content:", error);
-    }
-  }, [order, isOpen, orderId]);
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -208,7 +154,7 @@ export default function PrintPreviewDialog({ isOpen, onClose, orderId }: PrintPr
               <Button 
                 variant="outline" 
                 onClick={handlePrint}
-                disabled={loading || !!error}
+                disabled={!order}
               >
                 <Printer className="mr-2 h-4 w-4" />
                 Print
@@ -216,7 +162,7 @@ export default function PrintPreviewDialog({ isOpen, onClose, orderId }: PrintPr
               <Button 
                 variant="default" 
                 onClick={handleDownloadPDF}
-                disabled={loading || !!error}
+                disabled={!order}
               >
                 <Download className="mr-2 h-4 w-4" />
                 Save as PDF
@@ -233,18 +179,7 @@ export default function PrintPreviewDialog({ isOpen, onClose, orderId }: PrintPr
         </DialogHeader>
         
         <div className="p-6 overflow-y-auto print-content">
-          {loading ? (
-            <div className="flex items-center justify-center h-96 print-hide">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <span className="ml-2">Loading preview...</span>
-            </div>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center h-96 text-center print-hide">
-              <XCircle className="h-16 w-16 text-destructive mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Failed to load preview</h3>
-              <p className="text-muted-foreground">{error}</p>
-            </div>
-          ) : order ? (
+          {order ? (
             <div ref={printContentRef} className="print-preview-wrapper">
               <SalesOrderPrint 
                 order={order}

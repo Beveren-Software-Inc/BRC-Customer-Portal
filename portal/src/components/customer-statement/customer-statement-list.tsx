@@ -359,7 +359,7 @@ export default function CustomerStatementList() {
       if (type.toLowerCase().includes('invoice')) return 'bg-blue-50 dark:bg-blue-900/20';
       if (type.toLowerCase().includes('payment')) return 'bg-green-50 dark:bg-green-900/20';
       if (type.toLowerCase().includes('opening')) return 'bg-orange-50 dark:bg-orange-900/20';
-      if (type.toLowerCase().includes('reconciliation')) return 'bg-purple-50 dark:bg-purple-900/20';
+      if (type.toLowerCase().includes('reconciliation')) return 'bg-teal-50 dark:bg-teal-900/20';
       if (type.toLowerCase().includes('journal entry')) return 'bg-gray-50 dark:bg-gray-900/20';
       if (type.toLowerCase().includes('credit')) return 'bg-yellow-50 dark:bg-yellow-900/20';
       return '';

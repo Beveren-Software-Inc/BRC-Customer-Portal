@@ -4,7 +4,7 @@ import { useMemo } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { ArrowLeft, Download, CreditCard, Receipt } from "lucide-react"
+import { ArrowLeft, CreditCard, Receipt } from "lucide-react"
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/utils"
 import { Link, useParams } from "react-router-dom"
 import { useCurrency } from "@/context/currency-context"
@@ -40,12 +40,6 @@ export default function PaymentDetail() {
             </Link>
           </Button>
           <h2 className="text-2xl font-bold">Payment Details</h2>
-        </div>
-        <div className="flex gap-2">
-          <Button variant="outline">
-            <Download className="mr-2 h-4 w-4" />
-            Download Receipt
-          </Button>
         </div>
       </div>
 
@@ -111,7 +105,7 @@ export default function PaymentDetail() {
               </div>
               <div>
                 <dt className="text-sm font-medium text-muted-foreground">Amount</dt>
-                <dd className="text-base font-semibold">{formatCurrency(payment.amount, currency)}</dd>
+                <dd className="text-base font-semibold">{formatCurrency(payment.amount, payment.currency || 'SAR')}</dd>
               </div>
               <div>
                 <dt className="text-sm font-medium text-muted-foreground">Invoice</dt>
