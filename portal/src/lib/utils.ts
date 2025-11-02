@@ -113,8 +113,10 @@ export function getStatusColor(status: string | null | undefined): BadgeVariant 
     case "paid":
     case "completed":
     case "accepted":
+    case "closed":
       return "success"
     case "pending":
+    case "open":
       return "warning"
     case "processing":
     case "scheduled":
