@@ -1686,9 +1686,9 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
                 'line_id': entry.line_id
             })
         
-        # Calculate summary (exclude opening balance entry from totals)
-        total_debit = sum(t['debit'] for t in transactions if t.get('type') != 'Opening Balance')
-        total_credit = sum(t['credit'] for t in transactions if t.get('type') != 'Opening Balance')
+        # Calculate summary (include opening balance entry in totals to reflect true totals)
+        total_debit = sum(t['debit'] for t in transactions)
+        total_credit = sum(t['credit'] for t in transactions)
         
         # Get customer names (for all linked customers)
         customer_names = []

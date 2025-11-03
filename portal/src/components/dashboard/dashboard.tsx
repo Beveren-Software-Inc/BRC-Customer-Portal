@@ -715,13 +715,19 @@ export default function Dashboard() {
               <CardContent>
                 <div className={`text-xl sm:text-2xl font-bold ${item.textColor}`}>
                   {item.title === "Open Invoices" || item.title === "Open Deliveries" ? (
-                    <DualCurrencyDisplay amount={item.value} currency={item.currency || currency || "SAR"} />
+                    // Show count only for open invoices/deliveries
+                    item.count
                   ) : (
                     item.value.toString()
                   )}
                 </div>
                 <p className={`text-xs ${item.textColor} opacity-80`}>
-                  {item.count} {item.count === "1" ? t(item.title.toLowerCase().replace(/s$/, "")) : t(item.title.toLowerCase())}
+                  {item.title === "Open Invoices" || item.title === "Open Deliveries" ? (
+                    // Label with proper singular/plural
+                    item.count === "1" ? t(item.title.toLowerCase().replace(/s$/, "")) : t(item.title.toLowerCase())
+                  ) : (
+                    `${item.count} ${item.count === "1" ? t(item.title.toLowerCase().replace(/s$/, "")) : t(item.title.toLowerCase())}`
+                  )}
                 </p>
               </CardContent>
             </Card>
