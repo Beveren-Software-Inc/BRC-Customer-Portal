@@ -206,35 +206,35 @@ export const DeliveryNotePrint = ({
         }}>
           <thead>
             <tr style={{ backgroundColor: "#f5f5f5" }}>
-              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "12px", fontWeight: "bold" }}>
+              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "11px", fontWeight: "bold" }}>
                 Part no.<br />
-                <span style={{ direction: "rtl", fontSize: "12px" }}>رقم القطعة</span>
+                <span style={{ direction: "rtl", fontSize: "11px" }}>رقم القطعة</span>
               </th>
-              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "12px", fontWeight: "bold" }}>
+              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "11px", fontWeight: "bold" }}>
                 Description<br />
-                <span style={{ direction: "rtl", fontSize: "12px" }}>الوصف</span>
+                <span style={{ direction: "rtl", fontSize: "11px" }}>الوصف</span>
               </th>
-              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "12px", fontWeight: "bold", textAlign: "right" }}>
+              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "11px", fontWeight: "bold", textAlign: "right" }}>
                 Quantity<br />
-                <span style={{ direction: "rtl", fontSize: "12px" }}>الكمية</span>
+                <span style={{ direction: "rtl", fontSize: "11px" }}>الكمية</span>
               </th>
-              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "12px", fontWeight: "bold" }}>
+              <th style={{ border: "1px solid #ddd", padding: "8px", fontSize: "11px", fontWeight: "bold" }}>
                 Unit<br />
-                <span style={{ direction: "rtl", fontSize: "12px" }}>الوحدة</span>
+                <span style={{ direction: "rtl", fontSize: "11px" }}>الوحدة</span>
               </th>
             </tr>
           </thead>
           <tbody>
             {deliveryNote.items.map((item, index) => (
               <tr key={index}>
-                <td style={{ border: "1px solid #ddd", padding: "8px" }}>{item.item_code || "-"}</td>
-                <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left" }}>
+                <td style={{ border: "1px solid #ddd", padding: "8px", fontSize: "10px" }}>{item.item_code || "-"}</td>
+                <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "left", fontSize: "10px" }}>
                   {item.description || item.item_name || "-"}
                 </td>
-                <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right" }}>
+                <td style={{ border: "1px solid #ddd", padding: "8px", textAlign: "right", fontSize: "10px" }}>
                   {Math.round(item.qty || 0).toLocaleString()}
                 </td>
-                <td style={{ border: "1px solid #ddd", padding: "8px" }}>{item.uom || "-"}</td>
+                <td style={{ border: "1px solid #ddd", padding: "8px", fontSize: "10px" }}>{item.uom || "-"}</td>
               </tr>
             ))}
           </tbody>
