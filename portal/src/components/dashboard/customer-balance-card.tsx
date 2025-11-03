@@ -53,7 +53,8 @@ export default function CustomerBalanceCard({ customerBalance, loading }: Custom
   }
 
   const { current_balance, customer_name, customer_code } = customerBalance;
-  const displayCurrency = (customerBalance as any)?.currency || currency || 'SAR';
+  // Prefer customer's currency, default to SAR
+  const displayCurrency = (customerBalance as any)?.currency || 'SAR';
   console.log("Display Currency:", displayCurrency);
   // Calculate balance status
   const balanceStatus = current_balance > 0 ? 'positive' : current_balance < 0 ? 'negative' : 'zero';
@@ -100,10 +101,10 @@ export default function CustomerBalanceCard({ customerBalance, loading }: Custom
             {/* Balance Status Badge */}
             <div className="flex justify-end">
               <Badge 
-                variant={balanceStatus === 'positive' ? 'default' : balanceStatus === 'negative' ? 'destructive' : 'secondary'}
+                variant={'secondary'}
                 className="text-xs"
               >
-                {balanceStatus === 'positive' ? 'Credit' : balanceStatus === 'negative' ? 'Debit' : 'Zero Balance'}
+                Balance
               </Badge>
             </div>
           </div>

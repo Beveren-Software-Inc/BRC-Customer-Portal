@@ -20,11 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Eye, Download, Search, Receipt, RefreshCw } from "lucide-react";
+import { Eye, Download, Search, Receipt, RefreshCw, Loader2 } from "lucide-react";
 import { formatDate, getStatusColor } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
 import { DataTablePagination } from "../ui/data-table-pagination";
-import { SalesInvoice, getSapInvoices } from "@/lib/api";
+import { SalesInvoice, getSapInvoices, getSapInvoiceDetail } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DualCurrencyDisplay } from "@/components/ui/currency-display";
 import { toast } from "@/components/ui/use-toast";
@@ -42,9 +42,10 @@ export default function InvoicesList() {
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize, setPageSize] = useState(5);
   const [selectedInvoiceForPrint, setSelectedInvoiceForPrint] = useState<
-    string | null
+    SalesInvoice | null
   >(null);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
+  const [printLoadingId, setPrintLoadingId] = useState<string | null>(null);
 
   // Fetch Invoices from SAP using React Query for proper caching
   const {
@@ -134,29 +135,30 @@ export default function InvoicesList() {
     (currentPage + 1) * pageSize
   );
 
-  const downloadInvoicePDF = (invoiceId: string) => {
+  const openInvoicePrint = async (invoiceId: string) => {
     try {
-      // Use Frappe's native print functionality
-      // const url = `/api/method/frappe.utils.print_format.download_pdf?doctype=Sales%20Invoice&name=${invoiceId}`;
-      const url = `/printview?doctype=Sales%20Invoice&name=${invoiceId}&trigger_print=1`;
-
-      // Open in a new tab
-      window.open(url, "_blank");
-
-      toast({
-        title: "Print View Opened",
-        description: "The PDF document opened in a new tab",
-        duration: 3000,
-      });
+      setPrintLoadingId(invoiceId);
+      const detail = await getSapInvoiceDetail(invoiceId);
+      if (!detail) {
+        toast({
+          variant: "destructive",
+          title: t("Print Failed"),
+          description: t("Could not load invoice details."),
+        });
+        return;
+      }
+      setSelectedInvoiceForPrint(detail);
+      setIsPrintDialogOpen(true);
     } catch (error) {
-      console.error("Download failed:", error);
+      console.error("Failed to open print dialog:", error);
       toast({
         variant: "destructive",
-        title: "Print Failed",
-        description:
-          "There was a problem opening the print view. Please try again.",
-        duration: 5000,
+        title: t("Print Failed"),
+        description: t("There was a problem preparing the print preview."),
       });
+    }
+    finally {
+      setPrintLoadingId(null);
     }
   };
 
@@ -172,13 +174,11 @@ export default function InvoicesList() {
 <CustomerAging />
   
        
-      {selectedInvoiceForPrint && (
-        <InvoicePrintPreviewDialog
-          isOpen={isPrintDialogOpen}
-          onClose={() => setIsPrintDialogOpen(false)}
-          invoiceId={selectedInvoiceForPrint}
-        />
-      )}
+      <InvoicePrintPreviewDialog
+        isOpen={isPrintDialogOpen}
+        onClose={() => setIsPrintDialogOpen(false)}
+        invoice={selectedInvoiceForPrint}
+      />
 
       <Card>
         <CardHeader>
@@ -318,10 +318,20 @@ export default function InvoicesList() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => downloadInvoicePDF(invoice.name)}
+                          onClick={() => openInvoicePrint(invoice.name)}
+                          disabled={printLoadingId === invoice.name}
                         >
-                          <Download className="h-3.5 w-3.5 mr-1" />
-                          {t('Download')}
+                          {printLoadingId === invoice.name ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                              {t('Preparing...')}
+                            </>
+                          ) : (
+                            <>
+                              <Download className="h-3.5 w-3.5 mr-1" />
+                              {t('Download')}
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -458,9 +468,14 @@ export default function InvoicesList() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => downloadInvoicePDF(invoice.name)}
+                                onClick={() => openInvoicePrint(invoice.name)}
+                                disabled={printLoadingId === invoice.name}
                               >
-                                <Download className="h-4 w-4" />
+                                {printLoadingId === invoice.name ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Download className="h-4 w-4" />
+                                )}
                                 <span className="sr-only">{t('Download PDF')}</span>
                               </Button>
                             </div>

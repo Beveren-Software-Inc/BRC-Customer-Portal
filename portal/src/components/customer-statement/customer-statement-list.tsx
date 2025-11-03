@@ -88,6 +88,37 @@ export default function CustomerStatementList() {
     }
   };
 
+  const formatTransactionType = (type: string | null | undefined): string => {
+    if (!type || type.trim() === '') {
+      return 'General';
+    }
+
+    const typeStr = type.trim();
+
+    // Map specific transaction types to user-friendly names
+    const typeMap: Record<string, string> = {
+      'ttReceipt': 'Payment',
+      'ttARInvoice': 'Invoice',
+      'ttInternal Reconciliation': 'Reconciliation',
+      'ttJournal Entry': 'Journal Entry',
+      'ttDownPayment': 'Payment',
+      'ttARCredit Note': 'CreditNote',
+    };
+
+    // Check if we have a direct mapping
+    if (typeMap[typeStr]) {
+      return typeMap[typeStr];
+    }
+
+    // Remove "tt" prefix if present
+    if (typeStr.startsWith('tt')) {
+      return typeStr.substring(2);
+    }
+
+    // Return as is if no transformation needed
+    return typeStr;
+  };
+
   const { t } = useTranslation();
 
   // Define fields to fetch for orders and invoices (including customer_name)
@@ -328,6 +359,9 @@ export default function CustomerStatementList() {
       if (type.toLowerCase().includes('invoice')) return 'bg-blue-50 dark:bg-blue-900/20';
       if (type.toLowerCase().includes('payment')) return 'bg-green-50 dark:bg-green-900/20';
       if (type.toLowerCase().includes('opening')) return 'bg-orange-50 dark:bg-orange-900/20';
+      if (type.toLowerCase().includes('reconciliation')) return 'bg-teal-50 dark:bg-teal-900/20';
+      if (type.toLowerCase().includes('journal entry')) return 'bg-gray-50 dark:bg-gray-900/20';
+      if (type.toLowerCase().includes('credit')) return 'bg-yellow-50 dark:bg-yellow-900/20';
       return '';
     };
 
@@ -361,7 +395,8 @@ export default function CustomerStatementList() {
               </TableHeader>
               <TableBody>
                 {transactions.map((transaction: any, index: number) => {
-                  const bgClass = getTransactionTypeColor(transaction.type);
+                  const formattedType = formatTransactionType(transaction.type);
+                  const bgClass = getTransactionTypeColor(formattedType);
                   
                   return (
                     <TableRow key={index} className={bgClass}>
@@ -370,7 +405,7 @@ export default function CustomerStatementList() {
                       </TableCell>
                       <TableCell>
                         <Badge variant="secondary">
-                          {transaction.type || 'General'}
+                          {formattedType}
                         </Badge>
                       </TableCell>
                       <TableCell>{transaction.number || ''}</TableCell>

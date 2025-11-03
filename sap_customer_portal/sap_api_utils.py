@@ -4,7 +4,7 @@ import json
 import base64
 import time
 from datetime import datetime, timedelta
-from requests.exceptions import RequestException
+from requests.exceptions import RequestException, Timeout, ConnectionError
 from urllib.parse import urljoin
 from frappe.utils.password import get_decrypted_password
 import urllib3
@@ -13,11 +13,17 @@ import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 MAX_RETRIES = 3
-REQUEST_TIMEOUT = 60
+REQUEST_TIMEOUT = 60  # Default timeout for most operations
+DASHBOARD_REQUEST_TIMEOUT = 30  # Shorter timeout for dashboard calls to fail faster
 RETRY_DELAY = 1
 
-# Cache duration in seconds (5 minutes)
-CACHE_DURATION = 300
+# Cache duration in seconds
+# Dashboard/summary data can be cached longer since it's aggregated
+DASHBOARD_CACHE_DURATION = 3600  # 60 minutes for dashboard data
+# Individual document lists need fresher data
+CACHE_DURATION = 900  # 15 minutes for regular data (was 5 minutes)
+# Detail views need even fresher data
+DETAIL_CACHE_DURATION = 300  # 5 minutes for detail views
 
 def get_sap_b1_settings():
     """Get SAP B1 settings from the SAP B1 Settings doctype"""
@@ -116,30 +122,52 @@ def logout_from_sap_b1(server_url, headers):
     except RequestException as e:
         frappe.log_error("SAP B1 logout failed", "Customer Portal SAP Integration")
 
+def cleanup_sap_session():
+    """Cleanup SAP session for current request (optional, frappe.local auto-cleans after request)"""
+    if hasattr(frappe.local, 'sap_session'):
+        # Optional: Explicitly logout from SAP if needed (for license cleanup)
+        # Note: We're not explicitly logging out because sessions in frappe.local
+        # are automatically cleaned up after the request completes
+        delattr(frappe.local, 'sap_session')
+        frappe.logger().debug("[SAP Session] Cleaned up session")
+
 def get_cache_key(customer_code, data_type):
     """Generate cache key for customer data"""
     return f"sap_customer_data_{customer_code}_{data_type}"
 
-def get_cached_data(cache_key):
-    """Get data from cache if it exists and is not expired"""
+def get_cached_data(cache_key, cache_duration=None):
+    """Get data from cache if it exists and is not expired
+    
+    Args:
+        cache_key: The cache key to retrieve
+        cache_duration: Override cache duration in seconds (defaults to CACHE_DURATION)
+    """
     try:
         cached_data = frappe.cache().get_value(cache_key)
         if cached_data:
             cache_time = cached_data.get('timestamp')
-            if cache_time and datetime.now() - datetime.fromisoformat(cache_time) < timedelta(seconds=CACHE_DURATION):
+            duration = cache_duration if cache_duration is not None else CACHE_DURATION
+            if cache_time and datetime.now() - datetime.fromisoformat(cache_time) < timedelta(seconds=duration):
                 return cached_data.get('data')
     except Exception as e:
         frappe.logger().warning(f"Cache retrieval error: {str(e)}")
     return None
 
-def set_cached_data(cache_key, data):
-    """Set data in cache with timestamp"""
+def set_cached_data(cache_key, data, cache_duration=None):
+    """Set data in cache with timestamp
+    
+    Args:
+        cache_key: The cache key to store
+        data: The data to cache
+        cache_duration: Override cache duration in seconds (defaults to CACHE_DURATION)
+    """
     try:
         cache_data = {
             'data': data,
             'timestamp': datetime.now().isoformat()
         }
-        frappe.cache().set_value(cache_key, cache_data, expires_in_sec=CACHE_DURATION)
+        duration = cache_duration if cache_duration is not None else CACHE_DURATION
+        frappe.cache().set_value(cache_key, cache_data, expires_in_sec=duration)
     except Exception as e:
         frappe.logger().warning(f"Cache storage error: {str(e)}")
 
@@ -169,38 +197,91 @@ def clear_cache_for_customer(customer_code):
         frappe.logger().error(f"Error clearing cache for customer {customer_code}: {str(e)}")
         return False
 
-def fetch_sap_data_with_session(data_document, params=None, customer_code=None):
-    """Fetch data from SAP B1 with session management"""
+def get_or_create_sap_session():
+    """Get or create a reusable SAP session for the current request
+    
+    Uses frappe.local to store session per request, ensuring thread safety.
+    Sessions are reused across multiple API calls within the same request.
+    
+    Returns:
+        dict: Session cookies with 'B1SESSION' and 'ROUTEID', or None on error
+    """
+    # Use frappe.local to store session per request (thread-safe)
+    if not hasattr(frappe.local, 'sap_session'):
+        try:
+            settings = get_sap_b1_settings()
+            if not settings:
+                frappe.logger().error("SAP B1 settings not available")
+                return None
+            
+            # Login to SAP
+            credentials = {
+                "CompanyDB": settings["companydb"],
+                "UserName": settings["username"],
+                "Password": settings["password"]
+            }
+            
+            login_url = urljoin(settings["server_url"], "Login")
+            login_response = requests.post(
+                url=login_url,
+                json=credentials,
+                headers={"Content-Type": "application/json"},
+                verify=False,
+                timeout=REQUEST_TIMEOUT
+            )
+            
+            if login_response.status_code != 200:
+                frappe.logger().error(f"Login failed: {login_response.status_code} - {login_response.text}")
+                return None
+            
+            cookies = login_response.cookies
+            session_id = cookies.get('B1SESSION')
+            if not session_id:
+                frappe.logger().error("SAP login successful but no session ID received")
+                return None
+            
+            # Store session in frappe.local for reuse
+            frappe.local.sap_session = cookies
+            frappe.logger().info(f"[SAP Session] Created new session: {session_id[:10]}...")
+            return cookies
+        except Exception as e:
+            frappe.logger().error(f"Error creating SAP session: {str(e)}")
+            frappe.log_error(f"SAP session creation error: {str(e)}", "Customer Portal SAP")
+            return None
+    
+    # Return existing session
+    frappe.logger().debug("[SAP Session] Reusing existing session")
+    return frappe.local.sap_session
+
+def fetch_sap_data_with_session(data_document, params=None, customer_code=None, session_cookies=None, timeout=None):
+    """Fetch data from SAP B1 with session management
+    
+    Args:
+        data_document: SAP API endpoint (e.g., 'Invoices', 'Orders')
+        params: Query parameters dict
+        customer_code: Optional customer code to filter by
+        session_cookies: Optional session cookies to reuse (if None, creates or reuses session)
+        timeout: Optional timeout in seconds (defaults to REQUEST_TIMEOUT)
+    
+    Returns:
+        dict or list: SAP API response data, or None on error
+    """
     try:
         settings = get_sap_b1_settings()
         if not settings:
             frappe.logger().error("SAP B1 settings not available")
             return None
-                
-        # Login directly to get cookies (Postman style)
-        credentials = {
-            "CompanyDB": settings["companydb"],
-            "UserName": settings["username"],
-            "Password": settings["password"]
-        }
         
-        login_url = urljoin(settings["server_url"], "Login")
-        login_response = requests.post(
-            url=login_url,
-            json=credentials,
-            headers={"Content-Type": "application/json"},
-            verify=False,
-            timeout=REQUEST_TIMEOUT
-        )
+        # Use provided session or get/reuse existing session
+        if session_cookies is None:
+            cookies = get_or_create_sap_session()
+            if not cookies:
+                return None
+        else:
+            cookies = session_cookies
         
-        if login_response.status_code != 200:
-            frappe.logger().error(f"Login failed: {login_response.status_code} - {login_response.text}")
-            return None
-        
-        cookies = login_response.cookies
-        session_id = cookies.get('B1SESSION')
-        if not session_id:
-            return None
+        # Use provided timeout or default
+        request_timeout = timeout if timeout is not None else REQUEST_TIMEOUT
         
         # Build URL
         url = urljoin(settings["server_url"], data_document)
@@ -215,15 +296,49 @@ def fetch_sap_data_with_session(data_document, params=None, customer_code=None):
                 else:
                     normalized_params['$filter'] = f"CardCode eq '{customer_code}'"
         
-        # GET with cookies only (no Content-Type header needed)
-        response = requests.get(
-            url=url,
-            params=normalized_params,
-            cookies=cookies,
-            verify=False,
-            timeout=REQUEST_TIMEOUT
-        )
+        # GET with cookies and timeout handling
+        try:
+            response = requests.get(
+                url=url,
+                params=normalized_params,
+                cookies=cookies,
+                verify=False,
+                timeout=request_timeout
+            )
+        except Timeout:
+            frappe.logger().error(f"SAP API request timeout after {request_timeout}s: {data_document}")
+            frappe.log_error(f"SAP API request timeout: {data_document} (timeout: {request_timeout}s)", "Customer Portal SAP Timeout")
+            return None
+        except ConnectionError as e:
+            frappe.logger().error(f"SAP API connection error: {data_document} - {str(e)}")
+            frappe.log_error(f"SAP API connection error: {data_document} - {str(e)}", "Customer Portal SAP Connection")
+            return None
+        
+        # If session expired (401), try to create a new session and retry once
+        if response.status_code == 401:
+            frappe.logger().warning("[SAP Session] Session expired, creating new session")
+            if session_cookies is None:  # Only retry if we were using shared session
+                # Clear the stored session
+                if hasattr(frappe.local, 'sap_session'):
+                    delattr(frappe.local, 'sap_session')
+                # Try to get a new session
+                cookies = get_or_create_sap_session()
+                if cookies:
+                    # Retry the request with new session (only once, with timeout handling)
+                    try:
+                        response = requests.get(
+                            url=url,
+                            params=normalized_params,
+                            cookies=cookies,
+                            verify=False,
+                            timeout=request_timeout
+                        )
+                    except (Timeout, ConnectionError) as retry_error:
+                        frappe.logger().error(f"SAP API retry failed: {data_document} - {str(retry_error)}")
+                        return None
+        
         if response.status_code != 200:
+            frappe.logger().error(f"SAP API request failed: {response.status_code} - {response.text[:200]}")
             return None
         
         data = response.json()
@@ -237,7 +352,7 @@ def fetch_sap_data_with_session(data_document, params=None, customer_code=None):
         frappe.log_error(f"SAP data fetch error: {str(e)}", "Customer Portal SAP")
         return None
 
-def get_customer_balance_from_sap(customer_code):
+def get_customer_balance_from_sap(customer_code, session_cookies=None):
     """Fetch customer balance directly from SAP B1"""
     try:
         cache_key = get_cache_key(customer_code, 'balance')
@@ -254,7 +369,7 @@ def get_customer_balance_from_sap(customer_code):
             '$filter': f"CardCode eq '{customer_code}'"
         }
         
-        data = fetch_sap_data_with_session('BusinessPartners', params, None)
+        data = fetch_sap_data_with_session('BusinessPartners', params, None, session_cookies=session_cookies)
         
         if data and len(data) > 0:
             customer_data = data[0]
@@ -278,7 +393,7 @@ def get_customer_balance_from_sap(customer_code):
         return None
 
 
-def get_customer_orders_from_sap(customer_code, limit=500):
+def get_customer_orders_from_sap(customer_code, limit=500, session_cookies=None):
     """Fetch customer sales orders from SAP B1 with pagination support"""
     try:
         cache_key = f"orders_{customer_code}_{limit}"
@@ -300,7 +415,7 @@ def get_customer_orders_from_sap(customer_code, limit=500):
                 '$skip': skip
             }
             
-            data = fetch_sap_data_with_session('Orders', params, None)
+            data = fetch_sap_data_with_session('Orders', params, None, session_cookies=session_cookies)
             
             if isinstance(data, dict) and 'value' in data:
                 batch_data = data['value'] or []
@@ -410,7 +525,7 @@ def get_customer_order_detail_from_sap(customer_code, doc_num):
         frappe.logger().error(f"Error fetching SAP order detail: {str(e)}")
         return None
 
-def get_customer_delivery_notes_from_sap(customer_code, limit=500):
+def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cookies=None):
     """Fetch customer delivery notes from SAP B1 with pagination support"""
     try:
         cache_key = f"delivery_notes_{customer_code}_{limit}"
@@ -436,7 +551,7 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500):
             }
             
             frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Delivery notes params: {params}")
-            data = fetch_sap_data_with_session('DeliveryNotes', params, None)
+            data = fetch_sap_data_with_session('DeliveryNotes', params, None, session_cookies=session_cookies)
             
             if isinstance(data, dict) and 'value' in data:
                 batch_data = data['value'] or []
@@ -486,7 +601,7 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500):
 
         # Fetch Returns (Delivery Note Returns) and merge, mark as is_return=1 and negate amounts
         try:
-            returns = get_customer_delivery_returns_from_sap(customer_code, limit=limit)
+            returns = get_customer_delivery_returns_from_sap(customer_code, limit=limit, session_cookies=session_cookies)
         except Exception:
             returns = []
         merged = (all_delivery_notes or []) + (returns or [])
@@ -500,7 +615,7 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500):
         frappe.logger().error(f"Error fetching delivery notes from SAP: {str(e)}")
         return []
 
-def get_customer_delivery_returns_from_sap(customer_code, limit=500):
+def get_customer_delivery_returns_from_sap(customer_code, limit=500, session_cookies=None):
     """Fetch delivery returns (SAP Returns entity) and map as negative delivery notes with is_return flag."""
     try:
         cache_key = f"delivery_returns_{customer_code}_{limit}"
@@ -526,7 +641,7 @@ def get_customer_delivery_returns_from_sap(customer_code, limit=500):
             }
 
             frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Returns params: {params}")
-            data = fetch_sap_data_with_session('Returns', params, None)
+            data = fetch_sap_data_with_session('Returns', params, None, session_cookies=session_cookies)
 
             if isinstance(data, dict) and 'value' in data:
                 batch_data = data['value'] or []
@@ -631,7 +746,7 @@ def get_customer_delivery_note_detail_from_sap(customer_code, doc_num):
         frappe.logger().error(f"Error fetching SAP delivery note detail: {str(e)}")
         return None
 
-def get_customer_invoices_from_sap(customer_code, limit=500):
+def get_customer_invoices_from_sap(customer_code, limit=500, session_cookies=None):
     """Fetch customer invoices from SAP B1 with pagination support"""
     try:
         cache_key = f"invoices_{customer_code}_{limit}"
@@ -657,7 +772,7 @@ def get_customer_invoices_from_sap(customer_code, limit=500):
             }
             
             frappe.logger().info(f"[SAP] Batch {batch_num + 1} - Invoices params: {params}")
-            data = fetch_sap_data_with_session('Invoices', params, None)
+            data = fetch_sap_data_with_session('Invoices', params, None, session_cookies=session_cookies)
             
             if isinstance(data, dict) and 'value' in data:
                 batch_data = data['value'] or []
@@ -715,7 +830,7 @@ def get_customer_invoices_from_sap(customer_code, limit=500):
         
         # Fetch credit notes and merge (credit notes appear as negative invoices with is_return=1)
         try:
-            credit_notes = get_customer_credit_notes_from_sap(customer_code, limit=limit)
+            credit_notes = get_customer_credit_notes_from_sap(customer_code, limit=limit, session_cookies=session_cookies)
         except Exception:
             credit_notes = []
         merged = (all_invoices or []) + (credit_notes or [])
@@ -729,7 +844,7 @@ def get_customer_invoices_from_sap(customer_code, limit=500):
         frappe.logger().error(f"Error fetching invoices from SAP: {str(e)}")
         return []
 
-def get_customer_credit_notes_from_sap(customer_code, limit=500):
+def get_customer_credit_notes_from_sap(customer_code, limit=500, session_cookies=None):
     """Fetch customer credit notes from SAP B1 and map as negative invoices with is_return flag."""
     try:
         cache_key = f"credit_notes_{customer_code}_{limit}"
@@ -755,7 +870,7 @@ def get_customer_credit_notes_from_sap(customer_code, limit=500):
             }
 
             frappe.logger().info(f"[SAP] Batch {batch_num + 1} - CreditNotes params: {params}")
-            data = fetch_sap_data_with_session('CreditNotes', params, None)
+            data = fetch_sap_data_with_session('CreditNotes', params, None, session_cookies=session_cookies)
 
             if isinstance(data, dict) and 'value' in data:
                 batch_data = data['value'] or []
@@ -809,7 +924,7 @@ def get_customer_credit_notes_from_sap(customer_code, limit=500):
         frappe.logger().error(f"Error fetching credit notes from SAP: {str(e)}")
         return []
 
-def get_customer_payments_from_sap(customer_code, limit=500):
+def get_customer_payments_from_sap(customer_code, limit=500, session_cookies=None):
     """Fetch customer payment entries from SAP B1"""
     try:
         cache_key = f"payments_{customer_code}_{limit}"
@@ -837,7 +952,7 @@ def get_customer_payments_from_sap(customer_code, limit=500):
                 }
                 
                 frappe.logger().info(f"[SAP] Batch {batch_num + 1} - IncomingPayments params: {params}")
-                data = fetch_sap_data_with_session('IncomingPayments', params, None)
+                data = fetch_sap_data_with_session('IncomingPayments', params, None, session_cookies=session_cookies)
                 
                 if isinstance(data, dict) and 'value' in data:
                     batch_data = data['value'] or []

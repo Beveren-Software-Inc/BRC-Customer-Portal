@@ -28,6 +28,7 @@ import {
   ClipboardList,
   CalendarIcon,
   RefreshCw,
+  Loader2,
 } from "lucide-react";
 import { formatDate, getStatusColor } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
@@ -42,7 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import PrintPreviewDialog from "@/components/print/sales-order-print-preview-dialog";
-import { SalesOrder, getSapSalesOrders } from "@/lib/api";
+import { SalesOrder, getSapSalesOrders, getSapSalesOrderDetail } from "@/lib/api";
 import { useTranslation } from "react-i18next";
 import { MultiSelectDropdown } from "@/components/ui/select";
 import { useQuery } from "@tanstack/react-query";
@@ -55,9 +56,10 @@ export default function SalesOrdersList() {
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize, setPageSize] = useState(5);
   const [selectedOrderForPrint, setSelectedOrderForPrint] = useState<
-    string | null
+    SalesOrder | null
   >(null);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
+  const [printLoadingId, setPrintLoadingId] = useState<string | null>(null);
 
   // Fetch Sales Orders from SAP instead of ERPNext
   const {
@@ -142,29 +144,30 @@ const paginatedData = sortedData.slice(
   // Determine filtered/paginated data before render
   const isEmptyAfterLoad = !isLoading && (Array.isArray(filteredData) ? filteredData.length === 0 : true);
 
-  const downloadOrder = async (orderId: string) => {
+  const openOrderPrint = async (orderId: string) => {
     try {
-      // Use Frappe's native print functionality for PDF only
-      // const url = `/api/method/frappe.utils.print_format.download_pdf?doctype=Sales%20Order&name=${orderId}`;
-      const url = `/printview?doctype=Sales%20Order&name=${orderId}&trigger_print=1`;
-
-      // Open in a new tab
-      window.open(url, "_blank");
-
-      toast({
-        title: "Print View Opened",
-        description: "The PDF document opened in a new tab",
-        duration: 3000,
-      });
+      setPrintLoadingId(orderId);
+      const detail = await getSapSalesOrderDetail(orderId);
+      if (!detail) {
+        toast({
+          variant: "destructive",
+          title: t("Print Failed"),
+          description: t("Could not load order details."),
+        });
+        return;
+      }
+      setSelectedOrderForPrint(detail);
+      setIsPrintDialogOpen(true);
     } catch (error) {
-      console.error("Download failed:", error);
+      console.error("Failed to open print dialog:", error);
       toast({
         variant: "destructive",
-        title: "Print Failed",
-        description:
-          "There was a problem opening the print view. Please try again.",
-        duration: 5000,
+        title: t("Print Failed"),
+        description: t("There was a problem preparing the print preview."),
       });
+    }
+    finally {
+      setPrintLoadingId(null);
     }
   };
 
@@ -176,13 +179,11 @@ const paginatedData = sortedData.slice(
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      {selectedOrderForPrint && (
-        <PrintPreviewDialog
-          isOpen={isPrintDialogOpen}
-          onClose={() => setIsPrintDialogOpen(false)}
-          orderId={selectedOrderForPrint}
-        />
-      )}
+      <PrintPreviewDialog
+        isOpen={isPrintDialogOpen}
+        onClose={() => setIsPrintDialogOpen(false)}
+        order={selectedOrderForPrint}
+      />
 
       <Card>
         <CardHeader>
@@ -298,10 +299,20 @@ const paginatedData = sortedData.slice(
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => downloadOrder(order.name)}
+                          onClick={() => openOrderPrint(order.name)}
+                          disabled={printLoadingId === order.name}
                         >
-                          <Download className="h-3.5 w-3.5 mr-1" />
-                          Download
+                          {printLoadingId === order.name ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                              Preparing...
+                            </>
+                          ) : (
+                            <>
+                              <Download className="h-3.5 w-3.5 mr-1" />
+                              Download
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -399,9 +410,14 @@ const paginatedData = sortedData.slice(
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => downloadOrder(order.name)}
+                                onClick={() => openOrderPrint(order.name)}
+                                disabled={printLoadingId === order.name}
                               >
-                                <Download className="h-4 w-4" />
+                                {printLoadingId === order.name ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Download className="h-4 w-4" />
+                                )}
                                 <span className="sr-only">Download</span>
                               </Button>
                             </div>

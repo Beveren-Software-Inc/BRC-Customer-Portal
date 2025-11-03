@@ -87,31 +87,18 @@ export default function DeliveryNoteDetail() {
   }, [id]);
 
   const downloadDeliveryNotePDF = () => {
-    if (!id) return;
-
-    try {
-      // Use Frappe's native print functionality
-      // const url = `/api/method/frappe.utils.print_format.download_pdf?doctype=Delivery%20Note&name=${id}`;
-      const url = `/printview?doctype=Delivery%20Note&name=${id}&trigger_print=1`;
-
-      // Open in a new tab
-      window.open(url, "_blank");
-
-      toast({
-        title: "Print View Opened",
-        description: "The PDF document opened in a new tab",
-        duration: 3000,
-      });
-    } catch (error) {
-      console.error("Download failed:", error);
+    if (!delivery) {
       toast({
         variant: "destructive",
-        title: "Print Failed",
-        description:
-          "There was a problem opening the print view. Please try again.",
-        duration: 5000,
+        title: "Cannot Print",
+        description: "Delivery note data is not loaded yet. Please wait and try again.",
+        duration: 3000,
       });
+      return;
     }
+    
+    // Open print preview dialog with the loaded delivery note data
+    setIsPrintDialogOpen(true);
   };
 
   if (loading) {
@@ -221,7 +208,7 @@ export default function DeliveryNoteDetail() {
       <DeliveryNotePrintPreviewDialog
         isOpen={isPrintDialogOpen}
         onClose={() => setIsPrintDialogOpen(false)}
-        deliveryNoteId={id || ""}
+        deliveryNote={delivery}
       />
 
       {/* Header with back button, status and download button */}

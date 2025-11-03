@@ -31,8 +31,7 @@ import { useApi } from "@/hooks/useApi";
 import { useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { useNavigate, Link } from "react-router-dom";
-import { getMonthlySalesOrderStats, MonthlySalesOrderStat, getCustomerDashboardData, getSapSalesOrders, getSapInvoices, getSapDeliveryNotes, getSapCustomerPayments } from "@/lib/api";
-import { getCustomerBalance } from "@/lib/api";
+import { getMonthlySalesOrderStats, MonthlySalesOrderStat, getCustomerDashboardData } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
 import CustomerAging from "../sales-invoices/customer_ageing";
 import CustomerBalanceCard from "./customer-balance-card";
@@ -141,7 +140,12 @@ export default function Dashboard() {
     "currency",
   ];
 
-  // Fetch SAP dashboard data
+  // Fetch SAP dashboard data - this single call contains all needed data:
+  // - Customer balance
+  // - Invoices (recent 50)
+  // - Orders (recent 50)
+  // - Delivery notes (recent 50)
+  // - Summary counts (unpaid, undelivered, unbilled)
   const {
     data: sapDashboardData,
     isLoading: sapDataLoading,
@@ -152,58 +156,11 @@ export default function Dashboard() {
     queryFn: getCustomerDashboardData,
     staleTime: 1000 * 60 * 60, // 60 minutes
     refetchOnMount: true,
-    retry: 2,
+    retry: 1, // Reduced retries for faster failure on timeout
+    retryDelay: 2000, // 2 second delay between retries
+    // Graceful degradation: return partial data even if query fails
+    throwOnError: false, // Don't throw - allow partial rendering
   });
-
-  // Fetch customer balance directly as a fallback if dashboard data is unavailable
-  const {
-    data: sapCustomerBalance,
-    isLoading: sapBalanceLoading,
-    isError: sapBalanceError,
-    refetch: refetchSapBalance,
-  } = useQuery({
-    queryKey: ["sap-customer-balance"],
-    queryFn: getCustomerBalance,
-    staleTime: 1000 * 60 * 60, // 60 minutes
-    refetchOnMount: true,
-    retry: 2,
-  });
-
-  // Fetch SAP datasets individually to enable progressive summary updates
-  const { data: sapOrders = [], isLoading: sapOrdersLoading, isError: sapOrdersError } = useQuery({
-    queryKey: ["sap-sales-orders-dashboard"],
-    queryFn: getSapSalesOrders,
-    staleTime: 1000 * 60 * 60, // 60 minutes
-    refetchOnMount: true,
-    retry: 2,
-  });
-  const { data: sapDeliveries = [], isLoading: sapDeliveriesLoading, isError: sapDeliveriesError } = useQuery({
-    queryKey: ["sap-delivery-notes-dashboard"],
-    queryFn: getSapDeliveryNotes,
-    staleTime: 1000 * 60 * 60, // 60 minutes
-    refetchOnMount: true,
-    retry: 2,
-    enabled: sapOrdersLoading === false, // start after orders settle
-  });
-  const { data: sapInvoices = [], isLoading: sapInvoicesLoading, isError: sapInvoicesError } = useQuery({
-    queryKey: ["sap-invoices-dashboard"],
-    queryFn: getSapInvoices,
-    staleTime: 1000 * 60 * 60, // 60 minutes
-    refetchOnMount: true,
-    retry: 2,
-    enabled: sapDeliveriesLoading === false, // start after deliveries settle
-  });
-
-  // Background prefetch of payments once invoices have settled
-  useEffect(() => {
-    if (sapInvoicesLoading === false) {
-      queryClient.prefetchQuery({
-        queryKey: ["sap-payments"],
-        queryFn: getSapCustomerPayments,
-        staleTime: 1000 * 60 * 60,
-      }).catch(() => {});
-    }
-  }, [sapInvoicesLoading, queryClient]);
 
   // Extract SAP data from dashboard data using useMemo to prevent infinite loops
   const { salesOrders, invoices, deliveryNotes, quotations, ordersLoading, invoicesLoading, deliveriesLoading, quotationsLoading, ordersError, invoicesError, deliveriesError, quotationsError, refetchOrders, refetchInvoices, refetchDeliveries, refetchQuotations } = useMemo(() => {
@@ -399,13 +356,14 @@ export default function Dashboard() {
   );
 
   // Primitive keys to avoid effect thrashing on new array identities
-  const sapOrdersLen = Array.isArray(sapOrders) ? sapOrders.length : 0;
-  const sapInvoicesLen = Array.isArray(sapInvoices) ? sapInvoices.length : 0;
-  const sapDeliveriesLen = Array.isArray(sapDeliveries) ? sapDeliveries.length : 0;
+  const sapDashboardOrdersLen = Array.isArray(sapDashboardData?.orders) ? sapDashboardData.orders.length : 0;
+  const sapDashboardInvoicesLen = Array.isArray(sapDashboardData?.invoices) ? sapDashboardData.invoices.length : 0;
+  const sapDashboardDeliveriesLen = Array.isArray(sapDashboardData?.delivery_notes) ? sapDashboardData.delivery_notes.length : 0;
   const erpOrdersLen = Array.isArray(salesOrders) ? salesOrders.length : 0;
   const erpInvoicesLen = Array.isArray(invoices) ? invoices.length : 0;
   const erpDeliveriesLen = Array.isArray(deliveryNotes) ? deliveryNotes.length : 0;
   const hasSapSummary = Boolean(sapDashboardData && sapDashboardData.summary);
+  const hasSapData = Boolean(sapDashboardData);
 
   // Process dashboard data progressively as sources resolve; debounce with rAF
   useEffect(() => {
@@ -414,27 +372,25 @@ export default function Dashboard() {
       const run = () => {
         setError(null);
 
-        // Use SAP data if available, otherwise fall back to ERPNext data
+        // Use SAP dashboard data if available, otherwise fall back to ERPNext data
+        // Graceful degradation: work with partial data if some fields are missing
         let processedData;
-        if (sapDashboardData && sapDashboardData.summary) {
-          // Use SAP data
+        if (sapDashboardData) {
+          // Use SAP dashboard data (contains all needed data: invoices, orders, delivery_notes, summary)
+          // Handle cases where some data might be missing due to partial failures/timeouts
           processedData = {
             invoices: sapDashboardData.invoices || [],
             salesOrders: sapDashboardData.orders || [],
             deliveryNotes: sapDashboardData.delivery_notes || [],
             quotations: [], // SAP doesn't provide quotations in this endpoint
-            summary: sapDashboardData.summary
+            summary: sapDashboardData.summary || null
           };
         } else {
-          // Progressive dataset combination: prefer SAP individual datasets, then ERPNext fallbacks
-          const combinedOrders = sapOrdersLen ? sapOrders : (salesOrders || []);
-          const combinedInvoices = sapInvoicesLen ? sapInvoices : (invoices || []);
-          const combinedDeliveries = sapDeliveriesLen ? sapDeliveries : (deliveryNotes || []);
-
+          // Fallback to ERPNext data only if SAP dashboard data is not available
           processedData = {
-            invoices: combinedInvoices,
-            salesOrders: combinedOrders,
-            deliveryNotes: combinedDeliveries,
+            invoices: invoices || [],
+            salesOrders: salesOrders || [],
+            deliveryNotes: deliveryNotes || [],
             quotations: quotations || [],
             summary: null
           };
@@ -604,7 +560,7 @@ export default function Dashboard() {
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [sapOrdersLen, sapInvoicesLen, sapDeliveriesLen, erpOrdersLen, erpInvoicesLen, erpDeliveriesLen, hasSapSummary]);
+  }, [sapDashboardData, sapDashboardOrdersLen, sapDashboardInvoicesLen, sapDashboardDeliveriesLen, erpOrdersLen, erpInvoicesLen, erpDeliveriesLen, hasSapSummary, hasSapData, salesOrders, invoices, deliveryNotes, quotations]);
 
   // Separate effect to handle first load completion
   useEffect(() => {
@@ -688,8 +644,8 @@ export default function Dashboard() {
       <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 lg:grid-cols-4">
         {/* Customer Balance as a first card to align sizes */}
         <CustomerBalanceCard 
-          customerBalance={sapCustomerBalance || null}
-          loading={sapBalanceLoading}
+          customerBalance={sapDashboardData?.customer_info || null}
+          loading={sapDataLoading}
         />
         {sapDataLoading && summaryData.length === 0 && (
           <>
@@ -759,13 +715,19 @@ export default function Dashboard() {
               <CardContent>
                 <div className={`text-xl sm:text-2xl font-bold ${item.textColor}`}>
                   {item.title === "Open Invoices" || item.title === "Open Deliveries" ? (
-                    <DualCurrencyDisplay amount={item.value} currency={item.currency || currency || "SAR"} />
+                    // Show count only for open invoices/deliveries
+                    item.count
                   ) : (
                     item.value.toString()
                   )}
                 </div>
                 <p className={`text-xs ${item.textColor} opacity-80`}>
-                  {item.count} {item.count === "1" ? t(item.title.toLowerCase().replace(/s$/, "")) : t(item.title.toLowerCase())}
+                  {item.title === "Open Invoices" || item.title === "Open Deliveries" ? (
+                    // Label with proper singular/plural
+                    item.count === "1" ? t(item.title.toLowerCase().replace(/s$/, "")) : t(item.title.toLowerCase())
+                  ) : (
+                    `${item.count} ${item.count === "1" ? t(item.title.toLowerCase().replace(/s$/, "")) : t(item.title.toLowerCase())}`
+                  )}
                 </p>
               </CardContent>
             </Card>

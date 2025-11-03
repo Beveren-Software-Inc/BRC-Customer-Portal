@@ -1,14 +1,34 @@
 
 
 import frappe
+import os
 from frappe.utils.data import today, getdate
 import sap_customer_portal.sap_api_utils as sap_api_utils
+
+# Dashboard data limits - optimized for initial load performance
+# Dashboard uses:
+# - Summary: Only needs status counts (can work with subset)
+# - Recent Activities: Only shows top 5 most recent items
+# - Charts: Can work with reduced dataset
+# Reduced from 500 to minimize SAP API calls and response size
+DASHBOARD_INVOICE_LIMIT = 50   # Recent invoices for dashboard (full list available on invoice page)
+DASHBOARD_ORDER_LIMIT = 50     # Recent orders for dashboard (full list available on orders page)
+DASHBOARD_DELIVERY_NOTE_LIMIT = 50  # Recent delivery notes (full list available on delivery notes page)
 
 
 @frappe.whitelist()
 def clear_customer_cache():
-    """Clear all cached data for the current customer"""
+    """Clear all cached data for the current customer including dashboard cache"""
     try:
+        # Clear dashboard cache for current user
+        current_user = frappe.session.user
+        dashboard_cache_key = f"dashboard_data_{current_user}"
+        try:
+            frappe.cache().delete_value(dashboard_cache_key)
+            frappe.logger().info(f"Cleared dashboard cache for user {current_user}")
+        except Exception as e:
+            frappe.logger().warning(f"Error clearing dashboard cache: {str(e)}")
+        
         # Clear for all linked customer codes
         get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
         codes = get_codes() if callable(get_codes) else []
@@ -155,99 +175,368 @@ def get_customer_delivery_notes():
             "message": f"Error fetching customer delivery notes: {str(e)}"
         }
 
-@frappe.whitelist()
-def get_customer_dashboard_data():
-    """Get all customer data for dashboard in one call across linked customer codes"""
+def _get_customer_codes_for_dashboard():
+    """Get customer codes for current user"""
+    get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
+    codes = get_codes() if callable(get_codes) else []
+    if not codes:
+        single = sap_api_utils.get_customer_code_from_user()
+        if not single:
+            return None
+        codes = [single]
+    return codes
+
+def _initialize_sap_session():
+    """Initialize SAP session and return session cookies"""
+    session_cookies = sap_api_utils.get_or_create_sap_session()
+    if not session_cookies:
+        frappe.logger().error("[Dashboard] Failed to create SAP session")
+        return None
+    
+    session_id_preview = str(session_cookies.get('B1SESSION', 'N/A'))[:20] if hasattr(session_cookies, 'get') else 'N/A'
+    frappe.logger().info(f"[Dashboard] SAP session initialized. Session ID: {session_id_preview}...")
+    return session_cookies
+
+def _fetch_customer_data_for_code(code, invoice_limit=None, order_limit=None, delivery_note_limit=None):
+    """Fetch all data (balance, invoices, orders, delivery notes) for a single customer code
+    
+    Uses graceful degradation: if one data fetch fails or times out, others continue.
+    Uses shorter timeout for dashboard calls to fail faster.
+    
+    Args:
+        code: Customer code
+        invoice_limit: Optional limit for invoices (defaults to DASHBOARD_INVOICE_LIMIT)
+        order_limit: Optional limit for orders (defaults to DASHBOARD_ORDER_LIMIT)
+        delivery_note_limit: Optional limit for delivery notes (defaults to DASHBOARD_DELIVERY_NOTE_LIMIT)
+    """
+    result = {
+        'balance': None,
+        'invoices': [],
+        'orders': [],
+        'delivery_notes': []
+    }
+    
+    # Use dashboard limits by default for faster initial load
+    invoice_limit = invoice_limit or DASHBOARD_INVOICE_LIMIT
+    order_limit = order_limit or DASHBOARD_ORDER_LIMIT
+    delivery_note_limit = delivery_note_limit or DASHBOARD_DELIVERY_NOTE_LIMIT
+    
+    # Gracefully fetch each data type independently - failures don't block others
+    # Fetch balance (always needed, no limit)
     try:
-        get_codes = getattr(sap_api_utils, "get_customer_codes_from_user", None)
-        codes = get_codes() if callable(get_codes) else []
-        if not codes:
-            single = sap_api_utils.get_customer_code_from_user()
-            if not single:
-                return {"error": True, "message": "No customer code found for current user"}
-            codes = [single]
+        balance = sap_api_utils.get_customer_balance_from_sap(code, session_cookies=None)
+        if balance is not None:
+            result['balance'] = balance
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Failed to fetch balance for {code}: {str(e)}")
+        # Continue even if balance fails
+    
+    # Fetch invoices with reduced limit for dashboard (recent items only)
+    try:
+        invoices = sap_api_utils.get_customer_invoices_from_sap(code, limit=invoice_limit, session_cookies=None)
+        if invoices is not None and isinstance(invoices, list):
+            result['invoices'] = invoices
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Failed to fetch invoices for {code}: {str(e)}")
+        # Continue with empty invoices list
+    
+    # Fetch orders with reduced limit for dashboard (recent items only)
+    try:
+        orders = sap_api_utils.get_customer_orders_from_sap(code, limit=order_limit, session_cookies=None)
+        if orders is not None and isinstance(orders, list):
+            result['orders'] = orders
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Failed to fetch orders for {code}: {str(e)}")
+        # Continue with empty orders list
+    
+    # Fetch delivery notes with reduced limit for dashboard (recent items only)
+    try:
+        delivery_notes = sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=delivery_note_limit, session_cookies=None)
+        if delivery_notes is not None and isinstance(delivery_notes, list):
+            result['delivery_notes'] = delivery_notes
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Failed to fetch delivery notes for {code}: {str(e)}")
+        # Continue with empty delivery notes list
+    
+    return result
 
-        balances, invoices, orders, delivery_notes = [], [], [], []
-        for code in codes:
-            b = sap_api_utils.get_customer_balance_from_sap(code)
-            if b:
-                balances.append(b)
-            invoices.extend(sap_api_utils.get_customer_invoices_from_sap(code, limit=500))
-            orders.extend(sap_api_utils.get_customer_orders_from_sap(code, limit=500))
-            delivery_notes.extend(sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=500))
-
-        total_current_balance = sum((b.get('current_balance', 0) for b in balances)) if balances else 0
-        total_credit_limit = sum((b.get('credit_limit', 0) for b in balances)) if balances else 0
-        customer_info = {
-            "customer_code": ",".join([b.get("customer_code", "") for b in balances]) if balances else None,
-            "customer_name": balances[0].get("customer_name") if balances else None,
-            "current_balance": total_current_balance,
-            "credit_limit": total_credit_limit,
+def _calculate_customer_info(balances):
+    """Calculate customer info from balance data"""
+    if not balances:
+        return {
+            "customer_code": None,
+            "customer_name": None,
+            "current_balance": 0,
+            "credit_limit": 0,
         }
+    
+    total_balance = sum(b.get('current_balance', 0) or 0 for b in balances)
+    total_credit_limit = sum(b.get('credit_limit', 0) or 0 for b in balances)
+    
+    return {
+        "customer_code": ",".join([b.get("customer_code", "") for b in balances]),
+        "customer_name": balances[0].get("customer_name") if balances else None,
+        "current_balance": total_balance,
+        "credit_limit": total_credit_limit,
+    }
 
-        total_invoices = len(invoices)
-        total_orders = len(orders)
-        total_delivery_notes = len(delivery_notes)
-
-        # Compute unreconciled (open) invoices using SAP fields
-        # Only two statuses from SAP are used: Open and Closed
-        # Remaining amount = grand_total - paid_amount (PaidToDate)
-        unreconciled_invoices = []
-        unreconciled_total = 0
-        for inv in invoices:
-            if inv.get('status') == 'Open':
-                grand_total = inv.get('grand_total', 0) or 0
-                paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
-                remaining = grand_total - paid_amount
-                # Treat tiny negatives as zero due to rounding
-                remaining = remaining if abs(remaining) > 1e-6 else 0
-                if remaining > 0:
-                    unreconciled_invoices.append(inv)
-                    unreconciled_total += remaining
-
-        today_date = getdate(today())
-        overdue_invoices = [inv for inv in unreconciled_invoices if inv.get('due_date') and getdate(inv.get('due_date')) < today_date]
-        overdue_total = 0
-        for inv in overdue_invoices:
+def _calculate_invoice_summary(invoices):
+    """Calculate unreconciled and overdue invoice summaries
+    
+    Note: Summary is calculated from recent invoices (limited dataset).
+    For accurate totals, use the dedicated invoices page which fetches all records.
+    """
+    unreconciled_invoices = []
+    unreconciled_total = 0
+    
+    # Log status breakdown for debugging
+    statuses = {}
+    for inv in invoices:
+        status = inv.get('status', 'Unknown')
+        statuses[status] = statuses.get(status, 0) + 1
+    frappe.logger().info(f"[Dashboard] Invoice status breakdown (from {len(invoices)} recent invoices): {statuses}")
+    
+    # Calculate unreconciled (open with remaining balance) from available invoices
+    # Note: This is based on recent invoices only, not all historical records
+    for inv in invoices:
+        inv_status = str(inv.get('status', '')).strip()
+        if inv_status.lower() == 'open':
+            grand_total = inv.get('grand_total', 0) or 0
+            paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
+            remaining = grand_total - paid_amount
+            remaining = remaining if abs(remaining) > 1e-6 else 0  # Handle rounding
+            
+            if remaining > 0:
+                unreconciled_invoices.append(inv)
+                unreconciled_total += remaining
+    
+    # Calculate overdue invoices
+    today_date = getdate(today())
+    overdue_invoices = []
+    overdue_total = 0
+    
+    for inv in unreconciled_invoices:
+        due_date = inv.get('due_date')
+        if due_date and getdate(due_date) < today_date:
+            overdue_invoices.append(inv)
             grand_total = inv.get('grand_total', 0) or 0
             paid_amount = inv.get('paid_amount', inv.get('paid_to_date', 0) or 0) or 0
             remaining = grand_total - paid_amount
             overdue_total += remaining if remaining > 0 else 0
+    
+    return {
+        'unreconciled_invoices': unreconciled_invoices,
+        'unreconciled_total': unreconciled_total,
+        'overdue_invoices': overdue_invoices,
+        'overdue_total': overdue_total,
+    }
 
-        undelivered_orders = [order for order in orders if order.get('status') == 'Open']
-        undelivered_count = len(undelivered_orders)
+def _calculate_order_summary(orders):
+    """Calculate undelivered order summary
+    
+    Note: Summary is calculated from recent orders (limited dataset).
+    For accurate totals, use the dedicated orders page which fetches all records.
+    """
+    # Log status breakdown
+    statuses = {}
+    for order in orders:
+        status = order.get('status', 'Unknown')
+        statuses[status] = statuses.get(status, 0) + 1
+    frappe.logger().info(f"[Dashboard] Order status breakdown (from {len(orders)} recent orders): {statuses}")
+    
+    undelivered = [o for o in orders if str(o.get('status', '')).strip().lower() == 'open']
+    return {'undelivered_count': len(undelivered)}
 
-        unbilled_deliveries = [dn for dn in delivery_notes if dn.get('status') == 'Open']
-        unbilled_count = len(unbilled_deliveries)
-        unbilled_total = sum(dn.get('grand_total', 0) for dn in unbilled_deliveries)
+def _calculate_delivery_summary(delivery_notes):
+    """Calculate unbilled delivery summary
+    
+    Note: Summary is calculated from recent delivery notes (limited dataset).
+    For accurate totals, use the dedicated delivery notes page which fetches all records.
+    """
+    # Log status breakdown
+    statuses = {}
+    for dn in delivery_notes:
+        status = dn.get('status', 'Unknown')
+        statuses[status] = statuses.get(status, 0) + 1
+    frappe.logger().info(f"[Dashboard] Delivery note status breakdown (from {len(delivery_notes)} recent notes): {statuses}")
+    
+    unbilled = [dn for dn in delivery_notes if str(dn.get('status', '')).strip().lower() == 'open']
+    unbilled_total = sum(dn.get('grand_total', 0) or 0 for dn in unbilled)
+    
+    return {
+        'unbilled_count': len(unbilled),
+        'unbilled_total': unbilled_total,
+    }
 
-        return {
-            "success": True,
-            "data": {
-                "customer_info": customer_info,
-                "invoices": sorted(invoices, key=lambda i: i.get("posting_date") or "", reverse=True),
-                "orders": sorted(orders, key=lambda o: o.get("transaction_date") or "", reverse=True),
-                "delivery_notes": sorted(delivery_notes, key=lambda d: d.get("posting_date") or "", reverse=True),
-                "summary": {
-                    "total_invoices": total_invoices,
-                    "total_orders": total_orders,
-                    "total_delivery_notes": total_delivery_notes,
-                    # New keys reflecting SAP logic
-                    "unreconciled_invoices": len(unreconciled_invoices),
-                    "unreconciled_total": unreconciled_total,
-                    "overdue_invoices": len(overdue_invoices),
-                    "overdue_total": overdue_total,
-                    # Backward-compatible aliases used by existing frontend
-                    "unpaid_invoices": len(unreconciled_invoices),
-                    "unpaid_total": unreconciled_total,
-                    "undelivered_orders": undelivered_count,
-                    "unbilled_deliveries": unbilled_count,
-                    "unbilled_total": unbilled_total,
-                    "current_balance": total_current_balance,
-                    "credit_limit": total_credit_limit,
-                }
+def _build_dashboard_result(customer_info, invoices, orders, delivery_notes, invoice_summary, order_summary, delivery_summary):
+    """Build the final dashboard result structure"""
+    return {
+        "success": True,
+        "data": {
+            "customer_info": customer_info,
+            "invoices": sorted(invoices, key=lambda i: i.get("posting_date") or "", reverse=True),
+            "orders": sorted(orders, key=lambda o: o.get("transaction_date") or "", reverse=True),
+            "delivery_notes": sorted(delivery_notes, key=lambda d: d.get("posting_date") or "", reverse=True),
+            "summary": {
+                "total_invoices": len(invoices),
+                "total_orders": len(orders),
+                "total_delivery_notes": len(delivery_notes),
+                # SAP logic keys
+                "unreconciled_invoices": len(invoice_summary['unreconciled_invoices']),
+                "unreconciled_total": invoice_summary['unreconciled_total'],
+                "overdue_invoices": len(invoice_summary['overdue_invoices']),
+                "overdue_total": invoice_summary['overdue_total'],
+                # Backward-compatible aliases
+                "unpaid_invoices": len(invoice_summary['unreconciled_invoices']),
+                "unpaid_total": invoice_summary['unreconciled_total'],
+                "undelivered_orders": order_summary['undelivered_count'],
+                "unbilled_deliveries": delivery_summary['unbilled_count'],
+                "unbilled_total": delivery_summary['unbilled_total'],
+                "current_balance": customer_info['current_balance'],
+                "credit_limit": customer_info['credit_limit'],
             }
         }
+    }
+
+
+def _enqueue_background_prefetch(codes):
+    """Enqueue a background job to prefetch heavier datasets and warm caches.
+    Throttled per user via a short-lived cache key to avoid duplicate jobs.
+    """
+    try:
+        user = frappe.session.user
+        throttle_key = f"dashboard_prefetch_scheduled_{user}"
+        cache = frappe.cache()
+        if cache.get_value(throttle_key):
+            return
+        try:
+            cache.set_value(throttle_key, 1, expires_in_sec=900)  # 15 minutes
+        except Exception:
+            pass
+
+        frappe.enqueue(
+            "sap_customer_portal.api.customer_balance._background_prefetch_for_codes",
+            queue="long",
+            job_name=f"dashboard_prefetch_{user}",
+            now=False,
+            timeout=900,
+            codes=codes,
+        )
+    except Exception as e:
+        frappe.logger().error(f"[Prefetch] Failed to enqueue prefetch job: {str(e)}")
+
+
+def _background_prefetch_for_codes(codes):
+    """Background task: prefetch larger slices to warm caches for subsequent views.
+    Best-effort only; errors per dataset are logged and do not stop the job.
+    """
+    try:
+        if not codes:
+            return
+        frappe.logger().info(f"[Prefetch] Starting background cache warm for {len(codes)} code(s)")
+        prefetch_limit = 200
+        for code in codes:
+            try:
+                try:
+                    sap_api_utils.get_customer_payments_from_sap(code, limit=prefetch_limit)
+                except Exception as e:
+                    frappe.logger().warning(f"[Prefetch] Payments prefetch failed for {code}: {str(e)}")
+
+                try:
+                    sap_api_utils.get_customer_invoices_from_sap(code, limit=prefetch_limit)
+                except Exception as e:
+                    frappe.logger().warning(f"[Prefetch] Invoices prefetch failed for {code}: {str(e)}")
+
+                try:
+                    sap_api_utils.get_customer_orders_from_sap(code, limit=prefetch_limit)
+                except Exception as e:
+                    frappe.logger().warning(f"[Prefetch] Orders prefetch failed for {code}: {str(e)}")
+
+                try:
+                    sap_api_utils.get_customer_delivery_notes_from_sap(code, limit=prefetch_limit)
+                except Exception as e:
+                    frappe.logger().warning(f"[Prefetch] Delivery notes prefetch failed for {code}: {str(e)}")
+            except Exception as inner_e:
+                frappe.logger().warning(f"[Prefetch] Unexpected error for {code}: {str(inner_e)}")
+        frappe.logger().info("[Prefetch] Background cache warm completed")
+    except Exception as e:
+        frappe.logger().error(f"[Prefetch] Background prefetch job failed: {str(e)}")
+
+@frappe.whitelist()
+def get_customer_dashboard_data():
+    """Get all customer data for dashboard in one call across linked customer codes
+    
+    Uses extended cache duration (60 minutes) for dashboard data to improve performance.
+    """
+    try:
+        # Check cache first
+        current_user = frappe.session.user
+        dashboard_cache_key = f"dashboard_data_{current_user}"
+        cached_dashboard = sap_api_utils.get_cached_data(
+            dashboard_cache_key, 
+            cache_duration=sap_api_utils.DASHBOARD_CACHE_DURATION
+        )
+        
+        if cached_dashboard is not None:
+            return cached_dashboard
+        
+        # Get customer codes
+        codes = _get_customer_codes_for_dashboard()
+        if not codes:
+            return {"error": True, "message": "No customer code found for current user"}
+
+        # Initialize SAP session
+        session_cookies = _initialize_sap_session()
+        if not session_cookies:
+            return {"error": True, "message": "Failed to connect to SAP B1"}
+
+        # Fetch all customer data
+        frappe.logger().info(f"[Dashboard] Fetching data for {len(codes)} customer(s)")
+        balances, invoices, orders, delivery_notes = [], [], [], []
+        
+        for code in codes:
+            data = _fetch_customer_data_for_code(code)
+            if data['balance']:
+                balances.append(data['balance'])
+            invoices.extend(data['invoices'])
+            orders.extend(data['orders'])
+            delivery_notes.extend(data['delivery_notes'])
+        
+        frappe.logger().info(f"[Dashboard] Fetched: {len(balances)} balance(s), {len(invoices)} invoice(s), {len(orders)} order(s), {len(delivery_notes)} delivery note(s)")
+        
+        # Calculate summaries
+        customer_info = _calculate_customer_info(balances)
+        invoice_summary = _calculate_invoice_summary(invoices)
+        order_summary = _calculate_order_summary(orders)
+        delivery_summary = _calculate_delivery_summary(delivery_notes)
+        
+        # Build result
+        result = _build_dashboard_result(
+            customer_info, invoices, orders, delivery_notes,
+            invoice_summary, order_summary, delivery_summary
+        )
+        
+        # Cache result
+        sap_api_utils.set_cached_data(
+            dashboard_cache_key, 
+            result, 
+            cache_duration=sap_api_utils.DASHBOARD_CACHE_DURATION
+        )
+        
+        # Enqueue background prefetch to warm caches for heavier datasets (non-blocking)
+        try:
+            _enqueue_background_prefetch(codes)
+        except Exception:
+            # Best-effort only; ignore prefetch enqueue failures
+            pass
+        
+        # Cleanup session
+        try:
+            sap_api_utils.cleanup_sap_session()
+        except Exception:
+            pass
+        
+        return result
         
     except Exception as e:
         frappe.log_error(f"Error fetching customer dashboard data: {str(e)}", "Customer Portal")
@@ -258,7 +547,7 @@ def get_customer_dashboard_data():
 
 @frappe.whitelist()
 def get_customer_order_detail(doc_num: str = None):
-    """Get a single customer sales order with items from SAP B1 by DocNum"""
+    """Get a single customer sales order with items from SAP B1 by DocNum, enriched with customer info from Frappe"""
     try:
         frappe.logger().info(f"[API] get_customer_order_detail called with doc_num: {doc_num}")
         customer_code = sap_api_utils.get_customer_code_from_user()
@@ -270,6 +559,17 @@ def get_customer_order_detail(doc_num: str = None):
         detail = sap_api_utils.get_customer_order_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Order not found"}
+        
+        # Enrich with customer information from Frappe
+        customer_info = get_customer_info_from_frappe(customer_code)
+        if customer_info:
+            detail.update(customer_info)
+        
+        # Add logo paths from site files
+        logo_info = get_logo_paths()
+        if logo_info:
+            detail.update(logo_info)
+        
         return {"success": True, "data": detail}
     except Exception as e:
         frappe.log_error(f"Error fetching order detail: {str(e)}", "Customer Portal")
@@ -278,7 +578,7 @@ def get_customer_order_detail(doc_num: str = None):
 
 @frappe.whitelist()
 def get_customer_delivery_note_detail(doc_num: str = None):
-    """Get a single customer delivery note with items from SAP B1 by DocNum"""
+    """Get a single customer delivery note with items from SAP B1 by DocNum, enriched with customer info from Frappe"""
     try:
         frappe.logger().info(f"[API] get_customer_delivery_note_detail called with doc_num: {doc_num}")
         customer_code = sap_api_utils.get_customer_code_from_user()
@@ -290,6 +590,17 @@ def get_customer_delivery_note_detail(doc_num: str = None):
         detail = sap_api_utils.get_customer_delivery_note_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Delivery note not found"}
+        
+        # Enrich with customer information from Frappe
+        customer_info = get_customer_info_from_frappe(customer_code)
+        if customer_info:
+            detail.update(customer_info)
+        
+        # Add logo paths from site files
+        logo_info = get_logo_paths()
+        if logo_info:
+            detail.update(logo_info)
+        
         return {"success": True, "data": detail}
     except Exception as e:
         frappe.log_error(f"Error fetching delivery note detail: {str(e)}", "Customer Portal")
@@ -610,7 +921,7 @@ def get_invoice_status_summary(period: str = "12months"):
 
 @frappe.whitelist()
 def get_customer_invoice_detail(doc_num: str = None):
-    """Get a single customer invoice with items from SAP B1 by DocNum"""
+    """Get a single customer invoice with items from SAP B1 by DocNum, enriched with customer info from Frappe"""
     
     try:
         customer_code = sap_api_utils.get_customer_code_from_user()
@@ -618,13 +929,174 @@ def get_customer_invoice_detail(doc_num: str = None):
             return {"error": True, "message": "No customer code found for current user"}
         if not doc_num:
             return {"error": True, "message": "Missing doc_num"}
+        
+        # Get invoice detail from SAP
         detail = sap_api_utils.get_customer_invoice_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Invoice not found"}
+        
+        # Enrich with customer information from Frappe
+        customer_info = get_customer_info_from_frappe(customer_code)
+        if customer_info:
+            detail.update(customer_info)
+        
+        # Add logo paths from site files
+        logo_info = get_logo_paths()
+        if logo_info:
+            detail.update(logo_info)
+        
         return {"success": True, "data": detail}
     except Exception as e:
         frappe.log_error(f"Error fetching invoice detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching invoice detail: {str(e)}"}
+
+
+def get_logo_paths():
+    """Get logo file paths from Frappe site files directory"""
+    try:
+        logo_info = {}
+        
+        # Get site path
+        site_path = frappe.get_site_path()
+        files_path = os.path.join(site_path, "public", "files")
+        
+        # Check for BRC logo
+        brc_logo_path = os.path.join(files_path, "brc_logo.jpeg")
+        if os.path.exists(brc_logo_path):
+            logo_info['brc_logo_url'] = "/files/brc_logo.jpeg"
+        else:
+            # Fallback: check for brc_logo in different formats
+            for ext in ['.jpeg', '.jpg', '.png']:
+                logo_path = os.path.join(files_path, f"brc_logo{ext}")
+                if os.path.exists(logo_path):
+                    logo_info['brc_logo_url'] = f"/files/brc_logo{ext}"
+                    break
+        
+        # Check for Vision 2030 logo
+        vision_logo_path = os.path.join(files_path, "vision2030_logo.png")
+        if os.path.exists(vision_logo_path):
+            logo_info['vision2030_logo_url'] = "/files/vision2030_logo.png"
+        else:
+            # Fallback: check for vision2030_logo in different formats
+            for ext in ['.png', '.jpg', '.jpeg']:
+                logo_path = os.path.join(files_path, f"vision2030_logo{ext}")
+                if os.path.exists(logo_path):
+                    logo_info['vision2030_logo_url'] = f"/files/vision2030_logo{ext}"
+                    break
+        
+        return logo_info
+        
+    except Exception as e:
+        frappe.logger().error(f"Error getting logo paths: {str(e)}")
+        return {}
+
+
+def get_customer_info_from_frappe(customer_code: str):
+    """Get customer information from Frappe/ERPNext including addresses and contacts"""
+    try:
+        customer_info = {}
+        
+        # Get customer document
+        if frappe.db.exists("Customer", customer_code):
+            customer_doc = frappe.get_doc("Customer", customer_code)
+            customer_info['customer_name'] = customer_doc.customer_name or customer_code
+            
+            # Get primary address
+            addresses = frappe.db.sql("""
+                SELECT 
+                    name,
+                    address_line1,
+                    address_line2,
+                    city,
+                    state,
+                    pincode,
+                    country,
+                    address_title,
+                    address_type
+                FROM `tabAddress`
+                WHERE name IN (
+                    SELECT parent 
+                    FROM `tabDynamic Link` 
+                    WHERE link_doctype = 'Customer' 
+                    AND link_name = %s
+                )
+                ORDER BY 
+                    CASE WHEN address_type = 'Billing' THEN 1 
+                         WHEN address_type = 'Shipping' THEN 2 
+                         ELSE 3 END,
+                    is_primary_address DESC,
+                    creation DESC
+                LIMIT 1
+            """, (customer_code,), as_dict=True)
+            
+            if addresses:
+                addr = addresses[0]
+                address_parts = []
+                if addr.address_line1:
+                    address_parts.append(addr.address_line1)
+                if addr.address_line2:
+                    address_parts.append(addr.address_line2)
+                if addr.city:
+                    address_parts.append(addr.city)
+                if addr.state:
+                    address_parts.append(addr.state)
+                if addr.pincode:
+                    address_parts.append(addr.pincode)
+                if addr.country:
+                    address_parts.append(addr.country)
+                
+                customer_info['address_display'] = ", ".join(address_parts)
+                customer_info['customer_address'] = addr.name
+                customer_info['shipping_address'] = addr.name
+            
+            # Get shipping address separately if different
+            shipping_addresses = frappe.db.sql("""
+                SELECT 
+                    address_line1,
+                    address_line2,
+                    city,
+                    state,
+                    pincode,
+                    country
+                FROM `tabAddress`
+                WHERE name IN (
+                    SELECT parent 
+                    FROM `tabDynamic Link` 
+                    WHERE link_doctype = 'Customer' 
+                    AND link_name = %s
+                )
+                AND address_type = 'Shipping'
+                ORDER BY is_primary_address DESC, creation DESC
+                LIMIT 1
+            """, (customer_code,), as_dict=True)
+            
+            if shipping_addresses:
+                addr = shipping_addresses[0]
+                address_parts = []
+                if addr.address_line1:
+                    address_parts.append(addr.address_line1)
+                if addr.address_line2:
+                    address_parts.append(addr.address_line2)
+                if addr.city:
+                    address_parts.append(addr.city)
+                if addr.state:
+                    address_parts.append(addr.state)
+                if addr.pincode:
+                    address_parts.append(addr.pincode)
+                if addr.country:
+                    address_parts.append(addr.country)
+                
+                customer_info['shipping_address_display'] = ", ".join(address_parts)
+            
+            # Get tax ID if available
+            if hasattr(customer_doc, 'tax_id') and customer_doc.tax_id:
+                customer_info['customer_tax_id'] = customer_doc.tax_id
+        
+        return customer_info
+        
+    except Exception as e:
+        frappe.logger().error(f"Error fetching customer info from Frappe: {str(e)}")
+        return {}
 
 
 @frappe.whitelist()
@@ -1137,7 +1609,25 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
         from_date_parsed = from_date.split('T')[0] if 'T' in str(from_date) else from_date
         to_date_parsed = to_date.split('T')[0] if 'T' in str(to_date) else to_date
         
-        # Fetch JL Entry records for all customers and date range
+        # Step 1: Calculate opening balance from all transactions BEFORE from_date
+        opening_balance_entries = frappe.db.sql("""
+            SELECT 
+                debit,
+                credit
+            FROM `tabSap JL Entry`
+            WHERE customer IN ({})
+            AND posting_date < %s
+            ORDER BY posting_date ASC, jdtnum ASC, line_id ASC
+        """.format(', '.join(['%s'] * len(customer_codes))), 
+            tuple(customer_codes) + (from_date_parsed,), 
+            as_dict=True)
+        
+        # Calculate opening balance (balance as of the day before from_date)
+        opening_balance = 0
+        for entry in opening_balance_entries:
+            opening_balance += (entry.debit or 0) - (entry.credit or 0)
+        
+        # Step 2: Fetch JL Entry records for all customers and date range
         jl_entries = frappe.db.sql("""
             SELECT 
                 jdtnum,
@@ -1158,16 +1648,27 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
             tuple(customer_codes) + (from_date_parsed, to_date_parsed), 
             as_dict=True)
         
-        if not jl_entries:
-            return {
-                "error": True,
-                "message": "No transactions found for the selected date range"
-            }
-        
-        # Calculate running balance
+        # Step 3: Calculate running balance starting from opening balance
         transactions = []
-        running_balance = 0
+        running_balance = opening_balance  # Start with opening balance
         
+        # Add opening balance entry (show if non-zero or if no transactions in range)
+        if opening_balance != 0 or (jl_entries is None or len(jl_entries) == 0):
+            transactions.append({
+                'date': from_date_parsed,
+                'type': 'Opening Balance',
+                'number': '',
+                'description': f'Opening Balance as of {from_date_parsed}',
+                'debit': opening_balance if opening_balance > 0 else 0,
+                'credit': abs(opening_balance) if opening_balance < 0 else 0,
+                'balance': opening_balance,
+                'status': 'Closed',
+                'account_code': '',
+                'jdtnum': '',
+                'line_id': ''
+            })
+        
+        # Process transactions in the date range
         for entry in jl_entries:
             running_balance += (entry.debit or 0) - (entry.credit or 0)
             
@@ -1185,7 +1686,7 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
                 'line_id': entry.line_id
             })
         
-        # Calculate summary
+        # Calculate summary (include opening balance entry in totals to reflect true totals)
         total_debit = sum(t['debit'] for t in transactions)
         total_credit = sum(t['credit'] for t in transactions)
         
@@ -1206,8 +1707,8 @@ def get_customer_statement_from_jl_entry(from_date=None, to_date=None):
                 "customer_name": customer_name_display,
                 "from_date": from_date_parsed,
                 "to_date": to_date_parsed,
-                "opening_balance": running_balance - (total_debit - total_credit),
-                "closing_balance": running_balance,
+                "opening_balance": opening_balance,  # Balance as of the day before from_date
+                "closing_balance": running_balance,  # Final balance after all transactions in range
                 "transactions": transactions,
                 "summary": {
                     "total_transactions": len(transactions),

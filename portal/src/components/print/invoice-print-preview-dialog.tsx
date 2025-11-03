@@ -1,7 +1,7 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { SalesInvoice, getDocumentByName } from "@/lib/api"
+import { useRef } from "react"
+import { SalesInvoice } from "@/lib/api"
 import {
   Dialog,
   DialogContent,
@@ -9,43 +9,19 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
-import { Loader2, Download, Printer, XCircle } from "lucide-react"
+import { Download, Printer, XCircle } from "lucide-react"
 import InvoicePrint from "./invoice-print"
 import { toast } from "@/components/ui/use-toast"
 
 interface InvoicePrintPreviewDialogProps {
   isOpen: boolean;
   onClose: () => void;
-  invoiceId: string;
+  invoice: SalesInvoice | null;
 }
 
-export default function InvoicePrintPreviewDialog({ isOpen, onClose, invoiceId }: InvoicePrintPreviewDialogProps) {
-  const [invoice, setInvoice] = useState<SalesInvoice | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export default function InvoicePrintPreviewDialog({ isOpen, onClose, invoice }: InvoicePrintPreviewDialogProps) {
   const printContentRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
-
-  useEffect(() => {
-    async function fetchInvoiceDetail() {
-      if (!invoiceId || !isOpen) return;
-
-      try {
-        setLoading(true);
-        const data = await getDocumentByName<SalesInvoice>("Sales Invoice", invoiceId);
-        setInvoice(data);
-        setError(null);
-      } catch (err) {
-        console.error('Failed to fetch invoice details:', err);
-        setError("Could not load invoice details. Please try again later.");
-        setInvoice(null);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchInvoiceDetail();
-  }, [invoiceId, isOpen]);
 
   const handlePrint = () => {
     // Create a dedicated print window with controlled CSS
@@ -78,7 +54,7 @@ export default function InvoicePrintPreviewDialog({ isOpen, onClose, invoiceId }
       <!DOCTYPE html>
       <html>
       <head>
-        <title>Print - Invoice ${invoiceId}</title>
+        <title>Print - Invoice ${invoice?.name || ''}</title>
         <link rel="stylesheet" href="${stylesheetUrl}" type="text/css">
         <style>
           @page { 
@@ -177,7 +153,7 @@ export default function InvoicePrintPreviewDialog({ isOpen, onClose, invoiceId }
               <Button 
                 variant="outline" 
                 onClick={handlePrint}
-                disabled={loading || !!error}
+                disabled={!invoice}
               >
                 <Printer className="mr-2 h-4 w-4" />
                 Print
@@ -185,7 +161,7 @@ export default function InvoicePrintPreviewDialog({ isOpen, onClose, invoiceId }
               <Button 
                 variant="default" 
                 onClick={handleDownloadPDF}
-                disabled={loading || !!error}
+                disabled={!invoice}
               >
                 <Download className="mr-2 h-4 w-4" />
                 Save as PDF
@@ -202,18 +178,7 @@ export default function InvoicePrintPreviewDialog({ isOpen, onClose, invoiceId }
         </DialogHeader>
         
         <div className="p-6 overflow-y-auto print-content">
-          {loading ? (
-            <div className="flex items-center justify-center h-96 print-hide">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-              <span className="ml-2">Loading preview...</span>
-            </div>
-          ) : error ? (
-            <div className="flex flex-col items-center justify-center h-96 text-center print-hide">
-              <XCircle className="h-16 w-16 text-destructive mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Failed to load preview</h3>
-              <p className="text-muted-foreground">{error}</p>
-            </div>
-          ) : invoice ? (
+          {invoice ? (
             <div ref={printContentRef} className="print-preview-wrapper">
               <InvoicePrint 
                 invoice={invoice}
