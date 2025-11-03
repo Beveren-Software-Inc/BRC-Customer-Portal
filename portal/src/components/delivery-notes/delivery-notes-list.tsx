@@ -20,11 +20,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Eye, Search, Package, Download, RefreshCw } from "lucide-react";
+import { Eye, Search, Package, Download, RefreshCw, Loader2 } from "lucide-react";
 import { formatDate, getStatusColor } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
 import { DataTablePagination } from "../ui/data-table-pagination";
-import { DeliveryNote, getSapDeliveryNotes } from "@/lib/api";
+import { DeliveryNote, getSapDeliveryNotes, getSapDeliveryNoteDetail } from "@/lib/api";
 import { Skeleton } from "@/components/ui/skeleton";
 import { DualCurrencyDisplay } from "@/components/ui/currency-display";
 import { toast } from "@/components/ui/use-toast";
@@ -41,8 +41,9 @@ export default function DeliveryNotesList() {
   const [currentPage, setCurrentPage] = useState(0);
   const [pageSize, setPageSize] = useState(5);
   const [selectedDeliveryNoteForPrint, setSelectedDeliveryNoteForPrint] =
-    useState<string | null>(null);
+    useState<DeliveryNote | null>(null);
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false);
+  const [printLoadingId, setPrintLoadingId] = useState<string | null>(null);
 
   // Fetch Delivery Notes from SAP using React Query for proper caching
   const {
@@ -130,29 +131,30 @@ export default function DeliveryNotesList() {
     (currentPage + 1) * pageSize
   );
 
-  const downloadDeliveryNotePDF = (deliveryNoteId: string) => {
+  const openDeliveryPrint = async (deliveryNoteId: string) => {
     try {
-      // Use Frappe's native print functionality
-      // const url = `/api/method/frappe.utils.print_format.download_pdf?doctype=Delivery%20Note&name=${deliveryNoteId}`;
-      const url = `/printview?doctype=Delivery%20Note&name=${deliveryNoteId}&trigger_print=1`;
-
-      // Open in a new tab
-      window.open(url, "_blank");
-
-      toast({
-        title: "Print View Opened",
-        description: "The PDF document opened in a new tab",
-        duration: 3000,
-      });
+      setPrintLoadingId(deliveryNoteId);
+      const detail = await getSapDeliveryNoteDetail(deliveryNoteId);
+      if (!detail) {
+        toast({
+          variant: "destructive",
+          title: t("Print Failed"),
+          description: t("Could not load delivery note details."),
+        });
+        return;
+      }
+      setSelectedDeliveryNoteForPrint(detail);
+      setIsPrintDialogOpen(true);
     } catch (error) {
-      console.error("Download failed:", error);
+      console.error("Failed to open print dialog:", error);
       toast({
         variant: "destructive",
-        title: "Print Failed",
-        description:
-          "There was a problem opening the print view. Please try again.",
-        duration: 5000,
+        title: t("Print Failed"),
+        description: t("There was a problem preparing the print preview."),
       });
+    }
+    finally {
+      setPrintLoadingId(null);
     }
   };
 
@@ -164,13 +166,11 @@ export default function DeliveryNotesList() {
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      {selectedDeliveryNoteForPrint && (
-        <DeliveryNotePrintPreviewDialog
-          isOpen={isPrintDialogOpen}
-          onClose={() => setIsPrintDialogOpen(false)}
-          deliveryNoteId={selectedDeliveryNoteForPrint}
-        />
-      )}
+      <DeliveryNotePrintPreviewDialog
+        isOpen={isPrintDialogOpen}
+        onClose={() => setIsPrintDialogOpen(false)}
+        deliveryNote={selectedDeliveryNoteForPrint}
+      />
 
       <Card>
         <CardHeader>
@@ -280,10 +280,20 @@ export default function DeliveryNotesList() {
                         <Button
                           variant="outline"
                           size="sm"
-                          onClick={() => downloadDeliveryNotePDF(delivery.name)}
+                          onClick={() => openDeliveryPrint(delivery.name)}
+                          disabled={printLoadingId === delivery.name}
                         >
-                          <Download className="h-3.5 w-3.5 mr-1" />
-                          {t('Download')}
+                          {printLoadingId === delivery.name ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
+                              {t('Preparing...')}
+                            </>
+                          ) : (
+                            <>
+                              <Download className="h-3.5 w-3.5 mr-1" />
+                              {t('Download')}
+                            </>
+                          )}
                         </Button>
                       </div>
                     </div>
@@ -403,11 +413,14 @@ export default function DeliveryNotesList() {
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() =>
-                                  downloadDeliveryNotePDF(delivery.name)
-                                }
+                                onClick={() => openDeliveryPrint(delivery.name)}
+                                disabled={printLoadingId === delivery.name}
                               >
-                                <Download className="h-4 w-4" />
+                                {printLoadingId === delivery.name ? (
+                                  <Loader2 className="h-4 w-4 animate-spin" />
+                                ) : (
+                                  <Download className="h-4 w-4" />
+                                )}
                                 <span className="sr-only">{t('Download PDF')}</span>
                               </Button>
                             </div>
