@@ -163,10 +163,16 @@ export default function SalesOrderDetail() {
     )
   }
 
-  const deliveryPercentage = (String(order.status || '').toLowerCase() === 'closed')
-    ? 100
-    : (order.per_delivered ? order.per_delivered : 0)
-  const billingPercentage = order.per_billed ? order.per_billed : 0
+  const deliveryPercentage = (() => {
+    const isClosed = String(order.status || '').toLowerCase() === 'closed'
+    const totalQty = (order.items || []).reduce((sum, it) => sum + (it.qty || 0), 0)
+    const totalDelivered = (order.items || []).reduce((sum, it) => sum + (it.delivered_qty || 0), 0)
+    if (totalQty <= 0) return isClosed ? 100 : 0
+    const pct = (totalDelivered / totalQty) * 100
+    const clamped = Math.max(0, Math.min(100, pct))
+    return Number.isFinite(clamped) ? Math.round(clamped) : 0
+  })()
+  // const billingPercentage = order.per_billed ? order.per_billed : 0
 
   return (
     <div className="flex flex-col gap-6">
