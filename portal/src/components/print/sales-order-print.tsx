@@ -1,6 +1,5 @@
 import React from "react";
 import { SalesOrder } from "@/lib/api";
-import { formatDate } from "@/lib/utils";
 import "./print-style.css";
 
 interface SalesOrderPrintProps {
@@ -271,6 +270,7 @@ export const SalesOrderPrint = ({
                   <div style={{ fontWeight: "bold", fontSize: "12px", color: "#222" }}>{item.item_name || item.description || "-"}</div>
                   <div style={{ fontSize: "10px", color: "#888", marginTop: "2px" }}>
                     Item Code: {item.item_code || "-"}<br />
+                    {/*eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                     Delivery Date: {formatDateShort((item as any).delivery_date || order.delivery_date)}
                   </div>
                 </td>

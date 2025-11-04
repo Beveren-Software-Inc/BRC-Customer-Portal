@@ -218,7 +218,6 @@ export default function CustomerStatementList() {
     try {
       console.log("Fetching customer statement from SAP...");
       const data = await getSapCustomerStatement(fromDate, toDate);
-      console.log("SAP Customer statement data:", data);
       
       if (data && data.transactions) {
         setStatementData(data);
@@ -349,10 +348,6 @@ export default function CustomerStatementList() {
         </div>
       );
     }
-
-    // Debug: Log the data structure to understand what we're working with
-    console.log("Customer Statement data:", { transactions, summary, customer_name, opening_balance, closing_balance });
-    console.log("First transaction:", transactions[0]);
     
     // Group transactions by date for better display
     const getTransactionTypeColor = (type: string) => {

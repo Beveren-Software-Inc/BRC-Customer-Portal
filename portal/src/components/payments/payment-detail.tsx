@@ -7,15 +7,14 @@ import { Button } from "@/components/ui/button"
 import { ArrowLeft, CreditCard, Receipt } from "lucide-react"
 import { formatCurrency, formatDate, getStatusColor } from "@/lib/utils"
 import { Link, useParams } from "react-router-dom"
-import { useCurrency } from "@/context/currency-context"
 import { useQuery } from "@tanstack/react-query"
 import { getSapCustomerPayments } from "@/lib/api"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function PaymentDetail() {
   const { id } = useParams()
-  const { currency } = useCurrency()
 
+  //eslint-disable-next-line @typescript-eslint/no-explicit-any
   const { data: payments = [], isLoading, isError } = useQuery<any[], Error>({
     queryKey: ["sap-payments"],
     queryFn: getSapCustomerPayments,
@@ -24,6 +23,7 @@ export default function PaymentDetail() {
     retry: 2,
   })
 
+  console.log(isError)
   const payment = useMemo(() => {
     if (!id) return null
     return (payments || []).find(p => String(p.name) === String(id)) || null

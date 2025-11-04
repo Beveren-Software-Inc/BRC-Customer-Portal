@@ -1,17 +1,15 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Eye, Download, Search, RefreshCw, Loader2 } from "lucide-react"
-import { formatCurrency, formatDate, getStatusColor } from "@/lib/utils"
+import { Eye,  Search, RefreshCw, Loader2 } from "lucide-react"
 import { Link } from "react-router-dom"
 import { DataTablePagination } from "../ui/data-table-pagination"
-import { useCurrency } from "@/context/currency-context"
 import { useQuery } from "@tanstack/react-query"
 import { getSapCustomerPayments } from "@/lib/api"
 import { toast } from "@/components/ui/use-toast"
@@ -19,7 +17,6 @@ import { useTranslation } from "react-i18next"
 
 export default function PaymentsList() {
   const { t } = useTranslation();
-  const { currency } = useCurrency();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(0);
@@ -65,6 +62,7 @@ export default function PaymentsList() {
         month: '2-digit',
         day: '2-digit'
       });
+      
     } catch (error) {
       return dateString;
     }
