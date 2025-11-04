@@ -272,6 +272,8 @@ export interface SalesItem {
   uom?: string;
   stock_uom?: string;
   conversion_factor?: number;
+  delivered_qty?: number;
+  pending_qty?: number;
 }
 
 // Additional interfaces

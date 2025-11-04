@@ -351,9 +351,9 @@ export default function SalesOrderDetail() {
   </TableHeader>
   <TableBody>
     {order.items.map((item, index) => {
-      const isClosed = String(order.status || '').toLowerCase() === 'closed'
-      const delivered = isClosed ? (item.qty || 0) : (item.delivered_qty || 0)
-      const pending = isClosed ? '0.000' : ((item.qty || 0) - delivered).toFixed(3)
+      // Use delivered_qty and pending_qty from API (calculated from RemainingOpenQuantity/BaseOpenQuantity)
+      const delivered = (item.delivered_qty ?? 0).toFixed(3)
+      const pending = (item.pending_qty ?? 0).toFixed(3)
 
       return (
         <TableRow key={index} className="h-[48px]">
