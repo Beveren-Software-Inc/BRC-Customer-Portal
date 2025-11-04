@@ -24,7 +24,6 @@ export default function InvoicePrintPreviewDialog({ isOpen, onClose, invoice }: 
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const handlePrint = () => {
-    // Create a dedicated print window with controlled CSS
     const printWindow = window.open('', '_blank');
     if (!printWindow) {
       toast({

@@ -29,9 +29,6 @@ export const InvoicePrint = ({
     }).format(amount);
   };
   
-  // Extract company name from invoice data or use default
-  const companyName = invoice.company || "Your Company";
-  
   // Generate QR code data with invoice information
   const qrCodeData = JSON.stringify({
     invoice: invoice.name,

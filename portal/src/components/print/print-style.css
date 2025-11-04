@@ -2,14 +2,14 @@
 .print-container {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   color: #333;
-  max-width: 210mm; /* A4 width */
+  max-width: 210mm; 
   margin: 0 auto;
   padding: 10px;
   background: white;
 }
 
 .print-document {
-  padding: 10mm; /* Reduced padding for more content space */
+  padding: 10mm;
 }
 
 /* Print button */
@@ -154,7 +154,7 @@
   border-collapse: collapse;
   margin-bottom: 25px;
   font-size: 12px;
-  table-layout: auto; /* Changed from fixed for better automatic sizing */
+  table-layout: auto;
 }
 
 .items-table th,
@@ -180,13 +180,11 @@
   width: auto;
 }
 
-/* Only set minimum width for description column */
 .items-table th:nth-child(2), 
 .items-table td:nth-child(2) {
   min-width: 200px;
 }
 
-/* Make quantity, rate and amount columns right-aligned and compact */
 .items-table .text-right {
   text-align: right;
   white-space: nowrap;
@@ -238,10 +236,10 @@
   text-align: center;
   font-size: 12px;
   color: #6B7280;
-  margin-top: 40px; /* Increased spacing from content above */
+  margin-top: 40px;
   padding-top: 15px;
   border-top: 1px solid #E5E7EB;
-  clear: both; /* Ensure it clears any floats from the totals section */
+  clear: both;
 }
 
 .text-muted {
@@ -257,7 +255,6 @@
 
 /* Print Media Query - FIXED VERSION */
 @media print {
-  /* Reset base styles for print */
   html, body {
     margin: 0 !important;
     padding: 0 !important;
@@ -342,13 +339,12 @@
   /* SIMPLIFIED TABLE PRINT STYLING */
   .items-table {
     width: 100% !important;
-    table-layout: auto !important; /* Changed from fixed for better auto-sizing */
+    table-layout: auto !important; 
     border-collapse: collapse !important;
     margin-bottom: 25px !important;
-    page-break-inside: auto !important; /* Allow table to break across pages if needed */
+    page-break-inside: auto !important; 
   }
 
-  /* Remove all the forced width settings that were causing problems */
   .items-table col,
   .items-table th,
   .items-table td {
@@ -381,13 +377,13 @@
     margin-left: auto !important;
     float: right !important;
     clear: both !important;
-    padding-right: 10px !important; /* Add padding to prevent cut-off */
+    padding-right: 10px !important; 
     box-sizing: border-box !important;
   }
   
   /* Ensure print layout is proper */
   @page {
-    margin: 15mm !important; /* Add margin to avoid cut-off */
+    margin: 15mm !important; 
     size: A4 !important;
   }
   

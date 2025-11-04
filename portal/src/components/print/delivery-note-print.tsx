@@ -17,14 +17,7 @@ export const DeliveryNotePrint = ({
   const handlePrint = () => {
     window.print();
   };
-  
-  // Format currency with commas and 2 decimal places
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', { 
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2 
-    }).format(amount);
-  };
+
   
   // Generate QR code data
   const qrCodeData = JSON.stringify({
