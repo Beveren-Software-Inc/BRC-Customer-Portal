@@ -498,6 +498,21 @@ def get_customer_order_detail_from_sap(customer_code, doc_num):
         items = []
         for ln in lines:
             qty = ln.get('Quantity') or 0
+            # Get remaining open quantity - this is the pending/undelivered quantity
+            # Check if RemainingOpenQuantity exists in the response (not None)
+            remaining_open_qty = ln.get('RemainingOpenQuantity')
+            if remaining_open_qty is None:
+                # Fallback to BaseOpenQuantity if RemainingOpenQuantity is not present
+                remaining_open_qty = ln.get('BaseOpenQuantity') or 0
+            else:
+                remaining_open_qty = remaining_open_qty or 0
+            
+            pending_qty = remaining_open_qty
+            # Calculate delivered quantity: total quantity minus pending quantity
+            delivered_qty = qty - pending_qty
+            # Ensure delivered_qty is not negative
+            delivered_qty = max(0, delivered_qty)
+            
             rate = ln.get('UnitPrice') if ln.get('UnitPrice') is not None else (ln.get('PriceAfterVAT') or ln.get('Price') or 0)
             amount = ln.get('LineTotal') if ln.get('LineTotal') is not None else (qty * (rate or 0))
             items.append({
@@ -505,7 +520,8 @@ def get_customer_order_detail_from_sap(customer_code, doc_num):
                 'item_name': ln.get('ItemDescription'),
                 'description': ln.get('ItemDescription'),
                 'qty': qty,
-                'delivered_qty': 0,
+                'delivered_qty': delivered_qty,
+                'pending_qty': pending_qty,
                 'uom': ln.get('UoMCode') or ln.get('MeasureUnit') or '',
                 'rate': rate,
                 'amount': amount,
