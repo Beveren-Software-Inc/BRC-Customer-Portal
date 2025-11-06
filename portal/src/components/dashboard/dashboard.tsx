@@ -162,6 +162,10 @@ export default function Dashboard() {
     throwOnError: false, // Don't throw - allow partial rendering
   });
 
+  // Check if user has no linked customers
+  const hasNoCustomers = sapDashboardData?.has_customers === false;
+  const hasCustomers = sapDashboardData?.has_customers === true;
+
   // Extract SAP data from dashboard data using useMemo to prevent infinite loops
   const { salesOrders, invoices, deliveryNotes, quotations, ordersLoading, invoicesLoading, deliveriesLoading, quotationsLoading, ordersError, invoicesError, deliveriesError, quotationsError, refetchOrders, refetchInvoices, refetchDeliveries, refetchQuotations } = useMemo(() => {
     return {
@@ -579,6 +583,35 @@ export default function Dashboard() {
   // Special combined loading state (no longer blocks whole page)
   const isLoading = loading || isFirstLoad;
 
+  // Show special view for users without linked customers
+  if (!sapDataLoading && hasNoCustomers) {
+    return (
+      <div className="w-full flex flex-col items-center justify-center p-12 min-h-[60vh]">
+        <Card className="max-w-md w-full">
+          <CardContent className="flex flex-col items-center justify-center py-16 px-6">
+            <div className="bg-amber-50 dark:bg-amber-900/20 p-5 rounded-full mb-6">
+              <AlertCircle className="h-12 w-12 text-amber-600 dark:text-amber-400" />
+            </div>
+            <h3 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-3 text-center">
+              {t('No Linked Customer')}
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 text-center max-w-md mb-6">
+              {t('You don\'t have any linked customer. Switch to desk to access ERPNext.')}
+            </p>
+            <Button
+              onClick={() => {
+                window.location.href = '/app';
+              }}
+              className="bg-primary hover:bg-primary/90 text-primary-foreground"
+            >
+              {t('Switch to Desk')}
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   if (error) {
     return (
       <div className="w-full flex flex-col items-center justify-center p-12 bg-red-50 rounded-lg border border-red-100">
@@ -764,7 +797,17 @@ export default function Dashboard() {
             <CardTitle>{t('Customer Ageing')}</CardTitle>
           </CardHeader>
           <CardContent className="p-0 sm:p-6">
-            <CustomerAging />
+            {hasCustomers && <CustomerAging />}
+            {hasNoCustomers && (
+              <div className="flex items-center justify-center py-8 text-muted-foreground">
+                <p>{t('No customer ageing data available')}</p>
+              </div>
+            )}
+            {!hasCustomers && !hasNoCustomers && sapDataLoading && (
+              <div className="flex items-center justify-center py-8">
+                <p>{t('Loading...')}</p>
+              </div>
+            )}
           </CardContent>
         </Card>
 

@@ -84,32 +84,33 @@ def validate_customer_access(customer):
 def get_customer_list():
     """
     Get list of customers available to the current user for customer statements.
-    This respects user permissions and returns appropriate customers based on user role.
+    Returns only customers linked via Portal User or by email match.
     """
     try:
         user = frappe.session.user
-        roles = frappe.get_roles(user)
         
-        if user == "Administrator" or "System Manager" in roles:
-            # Administrator and System Manager see all customers
-            customers = frappe.get_all("Customer", fields=["name", "customer_name"])
-        else:
-            # For other users, get customers they have access to via Portal User
-            portal_users = frappe.get_all(
-                "Portal User",
-                filters={"user": user, "parenttype": "Customer"},
-                fields=["parent"]
+        # Get customers they have access to via Portal User
+        portal_users = frappe.get_all(
+            "Portal User",
+            filters={"user": user, "parenttype": "Customer"},
+            fields=["parent"]
+        )
+        customer_names = [pu.parent for pu in portal_users]
+        
+        # If no Portal User mapping, try to find by email
+        if not customer_names:
+            user_email = frappe.db.get_value("User", user, "email")
+            if user_email:
+                customer_names = frappe.get_all("Customer", filters={"email_id": user_email}, pluck="name")
+        
+        if customer_names:
+            customers = frappe.get_all(
+                "Customer",
+                filters={"name": ["in", customer_names]},
+                fields=["name", "customer_name"]
             )
-            customer_names = [pu.parent for pu in portal_users]
-            
-            if customer_names:
-                customers = frappe.get_all(
-                    "Customer",
-                    filters={"name": ["in", customer_names]},
-                    fields=["name", "customer_name"]
-                )
-            else:
-                customers = []
+        else:
+            customers = []
         
         # Format the response
         result = []

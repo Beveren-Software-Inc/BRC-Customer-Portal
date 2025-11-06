@@ -8,20 +8,34 @@ export default function CustomerAgingChart() {
   if (loading) return <p>Loading...</p>;
   if (error) return <p className="text-red-500">Error: {error.message}</p>;
 
+  // Check if data is empty or doesn't have the expected structure
+  if (!data || typeof data !== 'object' || Object.keys(data).length === 0) {
+    return (
+      <div className="flex items-center justify-center py-8 text-muted-foreground">
+        <p>No customer ageing data available</p>
+      </div>
+    );
+  }
+
   const currency = data.currency || "SAR";
 
   const chartData = [
-    { range: "Days 0-30", amount: data["0_30"] },
-    { range: "Days 31-60", amount: data["31_60"] },
-    { range: "Days 61-90", amount: data["61_90"] },
-    { range: "Days 91-120", amount: data["91_120"] },
-    { range: "Days 120+", amount: data["120_plus"] },
+    { range: "Days 0-30", amount: data["0_30"] || 0 },
+    { range: "Days 31-60", amount: data["31_60"] || 0 },
+    { range: "Days 61-90", amount: data["61_90"] || 0 },
+    { range: "Days 91-120", amount: data["91_120"] || 0 },
+    { range: "Days 120+", amount: data["120_plus"] || 0 },
   ];
 
-  const formatValue = (value: number) => {
-    if (value >= 1_000_000) return `${(value / 1_000_000).toFixed(1)}M ${currency}`;
-    if (value >= 1_000) return `${(value / 1_000).toFixed(1)}K ${currency}`;
-    return `${value.toFixed(2)} ${currency}`;
+  const formatValue = (value: number | undefined | null) => {
+    // Handle undefined, null, or non-numeric values
+    if (value === undefined || value === null || isNaN(Number(value))) {
+      return `0.00 ${currency}`;
+    }
+    const numValue = Number(value);
+    if (numValue >= 1_000_000) return `${(numValue / 1_000_000).toFixed(1)}M ${currency}`;
+    if (numValue >= 1_000) return `${(numValue / 1_000).toFixed(1)}K ${currency}`;
+    return `${numValue.toFixed(2)} ${currency}`;
   };
 
   return (

@@ -2,7 +2,9 @@ import { Routes, Route, Navigate } from "react-router-dom";
 import { ThemeProvider } from "@/components/theme-provider";
 import { CurrencyProvider } from "@/context/currency-context";
 import { AuthProvider } from "@/context/auth-context";
+import { CustomerProvider } from "@/context/customer-context";
 import MainLayout from "@/components/layout/main-layout";
+import ProtectedRoute from "@/components/auth/protected-route";
 import NotFound from "@/app/not-found/page";
 
 // Import page components
@@ -32,86 +34,147 @@ export default function App() {
     <ThemeProvider defaultTheme="light" storageKey="theme">
       <AuthProvider>
         <CurrencyProvider>
-          <Routes>
-            {/* Public routes */}
-            <Route path="/portal" element={<Navigate replace to="/" />} />
+          <CustomerProvider>
+            <Routes>
+              {/* Public routes */}
+              <Route path="/portal" element={<Navigate replace to="/" />} />
 
-            {/* NotFound route - outside of MainLayout */}
-            <Route path="not-found" element={<NotFound />} />
+              {/* NotFound route - outside of MainLayout */}
+              <Route path="not-found" element={<NotFound />} />
 
-            {/* All routes - no protection */}
-            <Route
-              path="/*"
-              element={
-                <MainLayout>
-                  <Routes>
-                    {/* Dashboard */}
-                    <Route path="/" element={<Dashboard />} />
+              {/* All routes */}
+              <Route
+                path="/*"
+                element={
+                  <MainLayout>
+                    <Routes>
+                      {/* Dashboard - always accessible */}
+                      <Route path="/" element={<Dashboard />} />
 
-                    {/* Sales Orders */}
-                    <Route path="/sales-orders" element={<SalesOrdersList />} />
-                    <Route
-                      path="/sales-orders/:id"
-                      element={<SalesOrderDetail />}
-                    />
+                      {/* Sales Orders - requires customer */}
+                      <Route 
+                        path="/sales-orders" 
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <SalesOrdersList />
+                          </ProtectedRoute>
+                        } 
+                      />
+                      <Route
+                        path="/sales-orders/:id"
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <SalesOrderDetail />
+                          </ProtectedRoute>
+                        }
+                      />
 
-                    {/* Quotations */}
-                    <Route path="/quotations" element={<QuotationsList />} />
-                    <Route
-                      path="/quotations/:id"
-                      element={<QuotationDetail />}
-                    />
+                      {/* Quotations - requires customer */}
+                      <Route 
+                        path="/quotations" 
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <QuotationsList />
+                          </ProtectedRoute>
+                        } 
+                      />
+                      <Route
+                        path="/quotations/:id"
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <QuotationDetail />
+                          </ProtectedRoute>
+                        }
+                      />
 
-                    {/* Invoices */}
-                    <Route path="/sales-invoices" element={<InvoicesList />} />
-                    <Route
-                      path="/sales-invoices/:id"
-                      element={<InvoiceDetail />}
-                    />
+                      {/* Invoices - requires customer */}
+                      <Route 
+                        path="/sales-invoices" 
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <InvoicesList />
+                          </ProtectedRoute>
+                        } 
+                      />
+                      <Route
+                        path="/sales-invoices/:id"
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <InvoiceDetail />
+                          </ProtectedRoute>
+                        }
+                      />
 
-                    {/* Delivery Notes */}
-                    <Route
-                      path="/delivery-notes"
-                      element={<DeliveryNotesList />}
-                    />
-                    <Route
-                      path="/delivery-notes/:id"
-                      element={<DeliveryNoteDetail />}
-                    />
+                      {/* Delivery Notes - requires customer */}
+                      <Route
+                        path="/delivery-notes"
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <DeliveryNotesList />
+                          </ProtectedRoute>
+                        }
+                      />
+                      <Route
+                        path="/delivery-notes/:id"
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <DeliveryNoteDetail />
+                          </ProtectedRoute>
+                        }
+                      />
 
-                    {/* Payments */}
-                    <Route path="/payments" element={<PaymentsList />} />
-                    <Route path="/payments/:id" element={<PaymentDetail />} />
+                      {/* Payments - requires customer */}
+                      <Route 
+                        path="/payments" 
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <PaymentsList />
+                          </ProtectedRoute>
+                        } 
+                      />
+                      <Route 
+                        path="/payments/:id" 
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <PaymentDetail />
+                          </ProtectedRoute>
+                        } 
+                      />
 
-                    {/* Support Tickets */}
-                    <Route
-                      path="/support-tickets"
-                      element={<SupportTicketsList />}
-                    />
-                    <Route
-                      path="/support-tickets/:id"
-                      element={<SupportTicketDetail />}
-                    />
+                      {/* Support Tickets */}
+                      <Route
+                        path="/support-tickets"
+                        element={<SupportTicketsList />}
+                      />
+                      <Route
+                        path="/support-tickets/:id"
+                        element={<SupportTicketDetail />}
+                      />
 
-                    {/* Documents */}
-                    <Route path="/documents" element={<DocumentsList />} />
+                      {/* Documents */}
+                      <Route path="/documents" element={<DocumentsList />} />
 
-                    {/* Settings */}
-                    <Route path="/settings" element={<Settings />} />
+                      {/* Settings - always accessible */}
+                      <Route path="/settings" element={<Settings />} />
 
-                    {/* Customer Statement */}
-                    <Route
-                      path="/customer-statement"
-                      element={<CustomerStatementList />}
-                    />
-                  </Routes>
-                </MainLayout>
-              }
-            />
+                      {/* Customer Statement - requires customer */}
+                      <Route
+                        path="/customer-statement"
+                        element={
+                          <ProtectedRoute requireCustomer={true}>
+                            <CustomerStatementList />
+                          </ProtectedRoute>
+                        }
+                      />
+                    </Routes>
+                  </MainLayout>
+                }
+              />
 
-            {/* Global catch-all route - renders NotFound page without layout */}
-            <Route path="*" element={<NotFound />} />
-          </Routes>
+              {/* Global catch-all route - renders NotFound page without layout */}
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </CustomerProvider>
         </CurrencyProvider>
       </AuthProvider>
     </ThemeProvider>

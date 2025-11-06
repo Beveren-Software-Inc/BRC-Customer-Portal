@@ -27,6 +27,7 @@ import { usePortalSettings } from "@/hooks/usePortalSettings";
 // Import custom hook for checking mobile views
 import { useMobile } from "@/hooks/use-mobile";
 import { useTranslation } from "react-i18next";
+import { useCustomer } from "@/context/customer-context";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -38,6 +39,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isMobile = useMobile();
+  const { hasCustomers } = useCustomer();
 
   // Use our custom hook to get portal settings
   const { logoUrl, iconUrl } = usePortalSettings();
@@ -74,18 +76,24 @@ export default function MainLayout({ children }: MainLayoutProps) {
     }
   };
 
-  // Menu items definition
+  // Menu items definition - Dashboard and Settings are always enabled
   const menuItems = [
-    { name: t("Dashboard"), icon: Home, path: "/" },
-    { name: t("Sales Orders"), icon: ClipboardList, path: "/sales-orders" },
-    { name: t("Delivery Notes"), icon: Package, path: "/delivery-notes" },
+    { name: t("Dashboard"), icon: Home, path: "/", alwaysEnabled: true },
+    { name: t("Sales Orders"), icon: ClipboardList, path: "/sales-orders", alwaysEnabled: false },
+    { name: t("Delivery Notes"), icon: Package, path: "/delivery-notes", alwaysEnabled: false },
     // { name: t("Quotations"), icon: FileText, path: "/quotations" },
-    { name: t("Invoices"), icon: BarChart3, path: "/sales-invoices" },
-    { name: t("Payments"), icon: CreditCard, path: "/payments" },
-    { name: t("Customer Statement"), icon: FileText, path: "/customer-statement" },
+    { name: t("Invoices"), icon: BarChart3, path: "/sales-invoices", alwaysEnabled: false },
+    { name: t("Payments"), icon: CreditCard, path: "/payments", alwaysEnabled: false },
+    { name: t("Customer Statement"), icon: FileText, path: "/customer-statement", alwaysEnabled: false },
     // { name: t("Support Tickets"), icon: TicketCheck, path: "/support-tickets" },
     // { name: t("Documents"), icon: FolderOpen, path: "/documents" },
   ];
+
+  // Determine if a menu item should be disabled
+  const isItemDisabled = (item: typeof menuItems[0]) => {
+    if (item.alwaysEnabled) return false;
+    return hasCustomers === false; // Disable if we know for sure there are no customers
+  };
 
   return (
     <ToggleSidebarContext.Provider value={{ toggle: toggleSidebar }}>
@@ -146,30 +154,60 @@ export default function MainLayout({ children }: MainLayoutProps) {
           {/* Menu items */}
           <div className="py-4 flex-grow">
             <ul className="space-y-1 px-2">
-              {menuItems.map((item) => (
-                <li key={item.name}>
-                  <Link
-                    to={item.path}
-                    className={`flex rounded-md px-3 py-2 ${
-                      styles.iconWrapper
-                    } ${
-                      pathname === item.path
-                        ? "bg-accent text-accent-foreground"
-                        : "hover:bg-accent hover:text-accent-foreground"
-                    }`}
-                  >
-                    <div className={styles.tooltipContainer}>
-                      <item.icon className="h-5 w-5" />
-                      {!sidebarOpen && !isMobile && (
-                        <span className={styles.tooltip}>{item.name}</span>
-                      )}
-                    </div>
-                    <span className={`ml-2 ${styles.sidebarTextContent}`}>
-                      {item.name}
-                    </span>
-                  </Link>
-                </li>
-              ))}
+              {menuItems.map((item) => {
+                const disabled = isItemDisabled(item);
+                return (
+                  <li key={item.name}>
+                    {disabled ? (
+                      <div
+                        className={`flex rounded-md px-3 py-2 ${
+                          styles.iconWrapper
+                        } opacity-50 cursor-not-allowed`}
+                        title={t("No linked customer available")}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                        onMouseDown={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                        }}
+                      >
+                        <div className={styles.tooltipContainer}>
+                          <item.icon className="h-5 w-5" />
+                          {!sidebarOpen && !isMobile && (
+                            <span className={styles.tooltip}>{item.name}</span>
+                          )}
+                        </div>
+                        <span className={`ml-2 ${styles.sidebarTextContent}`}>
+                          {item.name}
+                        </span>
+                      </div>
+                    ) : (
+                      <Link
+                        to={item.path}
+                        className={`flex rounded-md px-3 py-2 ${
+                          styles.iconWrapper
+                        } ${
+                          pathname === item.path
+                            ? "bg-accent text-accent-foreground"
+                            : "hover:bg-accent hover:text-accent-foreground"
+                        }`}
+                      >
+                        <div className={styles.tooltipContainer}>
+                          <item.icon className="h-5 w-5" />
+                          {!sidebarOpen && !isMobile && (
+                            <span className={styles.tooltip}>{item.name}</span>
+                          )}
+                        </div>
+                        <span className={`ml-2 ${styles.sidebarTextContent}`}>
+                          {item.name}
+                        </span>
+                      </Link>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </div>
 

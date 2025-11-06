@@ -1247,11 +1247,6 @@ def get_customer_code_from_user():
     """Get customer code for the current user"""
     current_user = frappe.session.user
     
-    # Check if user is Administrator or has system roles
-    roles = frappe.get_roles(current_user)
-    if current_user == "Administrator" or "System Manager" in roles:
-        return "F103011"  # Default customer code as mentioned in the request
-    
     # For portal users, get their linked customer
     try:
         portal_users = frappe.get_all(
@@ -1263,6 +1258,13 @@ def get_customer_code_from_user():
         if portal_users:
             customer_code = portal_users[0].parent
             return customer_code
+        
+        # Try to find customer by email if no Portal User mapping
+        user_email = frappe.db.get_value("User", current_user, "email")
+        if user_email:
+            customers_by_email = frappe.get_all("Customer", filters={"email_id": user_email}, pluck="name")
+            if customers_by_email:
+                return customers_by_email[0]
     except Exception as e:
         frappe.logger().error(f"Error getting customer code for user {current_user}: {str(e)}")
     
@@ -1412,22 +1414,12 @@ def get_customer_codes_from_user():
     """Return a list of customer codes for the current user.
 
     Logic:
-    - If user is Administrator/System Manager, return None (meaning no filter, caller can decide) or []?
-      For portal context we want explicit list; keep behavior aligned with portal usage:
-      If admin/system manager, return all customers (names) to allow aggregation.
-    - Else, collect parents from `Portal User` where user == current_user and parenttype == Customer.
+    - Collect parents from `Portal User` where user == current_user and parenttype == Customer.
     - If none found, fallback to Customer.email_id matching User.email to include all customers sharing same email.
+    - Returns empty list if no customers are linked (including admin/system managers without customer links).
     """
     current_user = frappe.session.user
     try:
-        roles = frappe.get_roles(current_user)
-        if current_user == "Administrator" or "System Manager" in roles or "Sales Manager" in roles:
-            try:
-                all_customers = frappe.get_all("Customer", pluck="name")
-                return all_customers
-            except Exception:
-                return []
-
         portal_customers = frappe.get_all(
             "Portal User",
             filters={"user": current_user, "parenttype": "Customer"},
