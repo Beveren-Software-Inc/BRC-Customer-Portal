@@ -97,15 +97,6 @@ def _resolve_customer_list(user, customer):
         frappe.logger().info(f"[DEBUG] Returning single customer: {[customer]}")
         return [customer]
 
-    roles = frappe.get_roles(user)
-    frappe.logger().info(f"[DEBUG] User roles: {roles}")
-    
-    if "Administrator" in roles or "System Manager" in roles or "Sales Manager" in roles:
-        # For Administrator, System Manager, and Sales Manager users, don't filter by customer
-        # This allows them to see all sales orders without customer restrictions
-        frappe.logger().info(f"[DEBUG] Admin user detected, returning None (no customer filter)")
-        return None
-    
     # For customer users, get their Portal User mapping
     portal_users = frappe.get_all("Portal User", filters={"user": user}, pluck="parent")
     frappe.logger().info(f"[DEBUG] Portal User customers: {portal_users}")
@@ -129,6 +120,10 @@ def _fetch_sales_orders(customer_list, company, months):
 
     # Ensure months is an integer (convert from string if needed)
     months = int(months) if months is not None else 12
+    
+    # If customer_list is empty, return empty results
+    if customer_list is not None and len(customer_list) == 0:
+        return [], {}, defaultdict(lambda: {"order_amount": 0, "amount_paid": 0, "currency": None})
     
     today = datetime.today()
     start_date = (today.replace(day=1) - timedelta(days=months * 31)).replace(day=1)

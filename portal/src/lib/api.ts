@@ -489,11 +489,16 @@ export async function getCustomerDashboardData(): Promise<any> {
     
     const data = await response.json();
     
+    // Check if user has no customers
+    if (data.message && data.message.has_customers === false) {
+      return { has_customers: false, message: data.message.message };
+    }
+    
     if (data.message && data.message.success) {
-      return data.message.data;
+      return { ...data.message.data, has_customers: data.message.has_customers !== false };
     } else {
       console.error("Error fetching dashboard data from SAP:", data.message?.message);
-      return null;
+      return { has_customers: false, error: true, message: data.message?.message };
     }
   } catch (error: any) {
     clearTimeout(timeoutId);
@@ -1013,12 +1018,9 @@ export interface MonthlySalesOrderStat {
 
 export async function getMonthlySalesOrderStats(months: number = 12): Promise<MonthlySalesOrderStat[]> {
   try {
-    console.log("[DEBUG] Calling getMonthlySalesOrderStats with months:", months);
-    console.log("[DEBUG] Request payload:", { months });
-    
+  
     // Try using fetch instead of axios to match direct API access
     let csrfToken = getCSRFToken();
-    console.log("[DEBUG] Using CSRF token:", csrfToken);
     
     let response = await fetch("/api/method/sap_customer_portal.utils.get_monthly_sales_order_stats", {
       method: "POST",
@@ -1030,9 +1032,7 @@ export async function getMonthlySalesOrderStats(months: number = 12): Promise<Mo
       body: JSON.stringify({ months })
     });
     
-    console.log("[DEBUG] Fetch response status:", response.status);
-    console.log("[DEBUG] Fetch response headers:", Object.fromEntries(response.headers.entries()));
-    
+  
     // If CSRF error, try different approaches
     if (!response.ok && response.status === 400) {
       const errorText = await response.text();
@@ -1096,10 +1096,8 @@ export async function getMonthlySalesOrderStats(months: number = 12): Promise<Mo
     }
     
     const data = await response.json();
-    console.log("[DEBUG] Fetch response data:", data);
     
     if (data.message) {
-      console.log("[DEBUG] Returning message data:", data.message);
       return data.message;
     }
     console.error("[ERROR] No message in response data:", data);

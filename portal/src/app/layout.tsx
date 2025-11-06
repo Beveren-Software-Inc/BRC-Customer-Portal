@@ -5,6 +5,7 @@ import "./globals.css"
 import MainLayout from "@/components/layout/main-layout"
 import { ThemeProvider } from "@/components/theme-provider"
 import { CurrencyProvider } from "@/context/currency-context"
+import { CustomerProvider } from "@/context/customer-context"
 import '@/app/globals.css'; 
 
 export default function RootLayout({
@@ -17,7 +18,9 @@ export default function RootLayout({
       <body> 
         <ThemeProvider defaultTheme="light" storageKey="vite-ui-theme"> 
           <CurrencyProvider>
-            <MainLayout>{children}</MainLayout>
+            <CustomerProvider>
+              <MainLayout>{children}</MainLayout>
+            </CustomerProvider>
           </CurrencyProvider>
         </ThemeProvider>
       </body>

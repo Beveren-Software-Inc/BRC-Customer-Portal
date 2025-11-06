@@ -372,6 +372,7 @@ def _build_dashboard_result(customer_info, invoices, orders, delivery_notes, inv
     """Build the final dashboard result structure"""
     return {
         "success": True,
+        "has_customers": True,
         "data": {
             "customer_info": customer_info,
             "invoices": sorted(invoices, key=lambda i: i.get("posting_date") or "", reverse=True),
@@ -467,6 +468,7 @@ def get_customer_dashboard_data():
     """Get all customer data for dashboard in one call across linked customer codes
     
     Uses extended cache duration (60 minutes) for dashboard data to improve performance.
+    Returns has_customers flag to indicate if user has linked customers.
     """
     try:
         # Check cache first
@@ -483,7 +485,11 @@ def get_customer_dashboard_data():
         # Get customer codes
         codes = _get_customer_codes_for_dashboard()
         if not codes:
-            return {"error": True, "message": "No customer code found for current user"}
+            return {
+                "error": False,
+                "has_customers": False,
+                "message": "No customer code found for current user"
+            }
 
         # Initialize SAP session
         session_cookies = _initialize_sap_session()
