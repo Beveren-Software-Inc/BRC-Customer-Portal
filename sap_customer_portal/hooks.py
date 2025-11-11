@@ -182,12 +182,12 @@ doc_events = {
 
 scheduler_events = {
     "cron": {
-        "0 */2 * * *": [
+        "15 */2 * * *": [
             "sap_customer_portal.scheduler.daily_sync_jl_entries"
         ]
     },
-    
 }
+
 
 
 # Testing
