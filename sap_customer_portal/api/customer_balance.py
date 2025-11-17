@@ -1216,7 +1216,7 @@ def sync_sap_jl_entries(from_date=None, to_date=None):
             'sap_customer_portal.api.customer_balance._sync_sap_jl_entries_background',
             queue='long',
             job_name='sync_sap_jl_entries',
-            timeout=1800,  # 60 minutes
+            timeout=120,  # 2 minutes
             is_async=True,
             from_date=from_date,
             to_date=to_date
