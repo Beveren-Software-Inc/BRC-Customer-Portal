@@ -243,6 +243,7 @@ export interface SalesInvoice {
   is_return?: number;
   return_against?: string;
   customer_tax_id?: string;
+  po_no?: string;
   brc_logo_url?: string;
   vision2030_logo_url?: string;
 }

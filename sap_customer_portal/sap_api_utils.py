@@ -409,7 +409,7 @@ def get_customer_orders_from_sap(customer_code, limit=500, session_cookies=None)
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -441,7 +441,8 @@ def get_customer_orders_from_sap(customer_code, limit=500, session_cookies=None)
                     'transaction_date': order.get('DocDate'),
                     'grand_total': order.get('DocTotal', 0),
                     'currency': order.get('DocCurrency', ''),
-                    'status': status
+                    'status': status,
+                    'po_no': order.get('NumAtCard') or '',
                 }
                 all_orders.append(order_data)
             
@@ -560,7 +561,7 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cooki
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -596,7 +597,8 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cooki
                     'grand_total': dn.get('DocTotal', 0),
                     'currency': dn.get('DocCurrency', ''),
                     'status': status,
-                    'comments': dn.get('Comments', '')
+                    'comments': dn.get('Comments', ''),
+                    'po_no': dn.get('NumAtCard') or '',
                 }
                 all_delivery_notes.append(dn_data)
             
@@ -650,7 +652,7 @@ def get_customer_delivery_returns_from_sap(customer_code, limit=500, session_coo
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -685,6 +687,7 @@ def get_customer_delivery_returns_from_sap(customer_code, limit=500, session_coo
                     'status': status,
                     'comments': rn.get('Comments', ''),
                     'is_return': 1,
+                    'po_no': rn.get('NumAtCard') or '',
                 }
                 all_returns.append(rn_data)
 
@@ -781,7 +784,7 @@ def get_customer_invoices_from_sap(customer_code, limit=500, session_cookies=Non
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -825,7 +828,8 @@ def get_customer_invoices_from_sap(customer_code, limit=500, session_cookies=Non
                     'paid_amount': paid_amount,
                     'currency': inv.get('DocCurrency', ''),
                     'status': status,
-                    'comments': inv.get('Comments', '')
+                    'comments': inv.get('Comments', ''),
+                    'po_no': inv.get('NumAtCard') or '',
                 }
                 all_invoices.append(inv_data)
             
@@ -879,7 +883,7 @@ def get_customer_credit_notes_from_sap(customer_code, limit=500, session_cookies
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -921,6 +925,7 @@ def get_customer_credit_notes_from_sap(customer_code, limit=500, session_cookies
                     'status': status,
                     'comments': cn.get('Comments', ''),
                     'is_return': 1,
+                    'po_no': cn.get('NumAtCard') or '',
                 }
                 all_notes.append(note_data)
 

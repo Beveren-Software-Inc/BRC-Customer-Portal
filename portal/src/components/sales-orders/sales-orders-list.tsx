@@ -120,11 +120,14 @@ const filteredData = (orders || []).filter((order) => {
   const searchLower = (searchTerm || "").toLowerCase();
   const nameStr = (order as any).name != null ? String((order as any).name) : ""; // DocNum from SAP can be numeric
   const customerStr = (order as any).customer != null ? String((order as any).customer) : "";
+  const poStr = (order as any).po_no != null ? String((order as any).po_no) : "";
   const statusStr = (order as any).status != null ? String((order as any).status) : "";
 
   const matchesSearch =
+    !searchLower ||
     nameStr.toLowerCase().includes(searchLower) ||
-    customerStr.toLowerCase().includes(searchLower);
+    customerStr.toLowerCase().includes(searchLower) ||
+    poStr.toLowerCase().includes(searchLower);
   const matchesStatus =
     statusFilter === "all" ||
     statusFilterArray.includes(statusStr.toLowerCase());
@@ -270,6 +273,11 @@ const paginatedData = sortedData.slice(
                           <div className="text-sm text-muted-foreground mt-1 truncate max-w-[200px]">
                             {order.customer}
                           </div>
+                          {order.po_no ? (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {t('PO')}: {order.po_no}
+                            </div>
+                          ) : null}
                         </div>
                         <Badge variant={getStatusColor(order.status)}>
                           {order.status}
@@ -356,6 +364,7 @@ const paginatedData = sortedData.slice(
                   <TableHeader>
                     <TableRow>
                       <TableHead>{t('Order ID')}</TableHead>
+                      <TableHead className="hidden lg:table-cell">{t('PO Reference')}</TableHead>
                       <TableHead className="hidden md:table-cell">{t('Customer')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Order Date')}</TableHead>
                       {/* <TableHead className="text-right">{t('Qty')}</TableHead> */}
@@ -375,6 +384,9 @@ const paginatedData = sortedData.slice(
                             >
                               {order.name}
                             </Link>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell text-muted-foreground">
+                            {order.po_no || '—'}
                           </TableCell>
                           <TableCell className="hidden md:table-cell">
                             <div className="max-w-[200px] truncate">

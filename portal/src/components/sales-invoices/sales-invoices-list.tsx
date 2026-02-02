@@ -108,9 +108,12 @@ export default function InvoicesList() {
 
   const filteredData = (invoices || []).filter((invoice) => {
     if (!invoice) return false;
+    const searchLower = (searchTerm || "").toLowerCase();
     const matchesSearch =
-      String(invoice.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(invoice.customer || '').toLowerCase().includes(searchTerm.toLowerCase());
+      !searchLower ||
+      String(invoice.name || '').toLowerCase().includes(searchLower) ||
+      String(invoice.customer || '').toLowerCase().includes(searchLower) ||
+      String(invoice.po_no || '').toLowerCase().includes(searchLower);
     const matchesStatus =
       statusFilter === "all" ||
       statusFilterArray.includes(String(invoice.status || '').toLowerCase());
@@ -266,6 +269,11 @@ export default function InvoicesList() {
                           <div className="text-sm text-muted-foreground mt-1 truncate max-w-[200px]">
                             {invoice.customer}
                           </div>
+                          {invoice.po_no ? (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {t('PO')}: {invoice.po_no}
+                            </div>
+                          ) : null}
                         </div>
                         <Badge variant={getStatusColor(invoice.status)}>
                           {invoice.status}
@@ -375,6 +383,7 @@ export default function InvoicesList() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>{t('Invoice ID')}</TableHead>
+                      <TableHead className="hidden lg:table-cell">{t('PO Reference')}</TableHead>
                       <TableHead className="hidden md:table-cell">{t('Customer')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Issue Date')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Due Date')}</TableHead>
@@ -424,6 +433,9 @@ export default function InvoicesList() {
                             >
                               {invoice.name}
                             </Link>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell text-muted-foreground">
+                            {invoice.po_no || '—'}
                           </TableCell>
                           <TableCell>{invoice.customer}</TableCell>
                           <TableCell>
@@ -484,7 +496,7 @@ export default function InvoicesList() {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={8}>
+                        <TableCell colSpan={10}>
                           <div className="flex flex-col items-center justify-center py-12">
                             <div className="bg-blue-50 p-4 rounded-full mb-4">
                               <Receipt className="h-10 w-10 text-blue-500" />
