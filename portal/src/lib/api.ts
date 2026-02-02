@@ -125,6 +125,8 @@ export interface SalesOrder {
   allow_partial_delivery?: boolean;
   brc_logo_url?: string;
   vision2030_logo_url?: string;
+  related_deliveries?: { name: string; amount: number; currency: string }[];
+  related_invoices?: { name: string; amount: number; currency: string }[];
 }
 
 export async function getSapSalesOrderDetail(docNum: string): Promise<SalesOrder | null> {
@@ -139,6 +141,27 @@ export async function getSapSalesOrderDetail(docNum: string): Promise<SalesOrder
     }
   } catch (error) {
     console.error("Error fetching order detail:", error);
+    return null;
+  }
+}
+
+export interface RelatedDocsForOrder {
+  related_deliveries: { name: string; amount: number; currency: string }[];
+  related_invoices: { name: string; amount: number; currency: string }[];
+}
+
+export async function getRelatedDocsForOrder(docNum: string): Promise<RelatedDocsForOrder | null> {
+  try {
+    const response = await fetch(`/api/method/sap_customer_portal.api.customer_balance.get_related_docs_for_order?doc_num=${encodeURIComponent(docNum)}`);
+    const data = await response.json();
+    if (data.message && data.message.success) {
+      return data.message.data as RelatedDocsForOrder;
+    } else {
+      console.error("Error fetching related docs from SAP:", data.message?.message);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching related docs:", error);
     return null;
   }
 }

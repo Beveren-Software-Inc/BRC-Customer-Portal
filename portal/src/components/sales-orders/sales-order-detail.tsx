@@ -5,11 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { ArrowLeft, AlertCircle, TruckIcon, CalendarIcon, UserCircle, Wallet, Download, FileText } from "lucide-react"
+import { ArrowLeft, AlertCircle, TruckIcon, CalendarIcon, UserCircle, Wallet, Download, FileText, Package, Receipt, Loader2 } from "lucide-react"
 import { formatDate, getStatusColor } from "@/lib/utils"
 import { Link, useParams } from "react-router-dom"
 import { SalesOrder } from "@/lib/api"
-import { getSapSalesOrderDetail } from "@/lib/api"
+import { getSapSalesOrderDetail, getRelatedDocsForOrder } from "@/lib/api"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Progress } from "@/components/ui/progress"
@@ -30,6 +30,9 @@ export default function SalesOrderDetail() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [isPrintDialogOpen, setIsPrintDialogOpen] = useState(false)
+  const [relatedDeliveries, setRelatedDeliveries] = useState<{ name: string; amount: number; currency: string }[] | null>(null)
+  const [relatedInvoices, setRelatedInvoices] = useState<{ name: string; amount: number; currency: string }[] | null>(null)
+  const [relatedDocsLoading, setRelatedDocsLoading] = useState(false)
   const { t } = useTranslation()
 
   useEffect(() => {
@@ -38,9 +41,7 @@ export default function SalesOrderDetail() {
 
       try {
         setLoading(true)
-        console.log("Fetching order detail for ID:", id)
         const data = await getSapSalesOrderDetail(id)
-        console.log("Fetched order data:", data)
         setOrder(data)
         setError(null)
       } catch (err) {
@@ -55,7 +56,35 @@ export default function SalesOrderDetail() {
     fetchOrderDetail()
   }, [id])
 
-  console.log("Rendering SalesOrderDetail with order:", order, "loading:", loading, "error:", error)
+  useEffect(() => {
+    if (!id || !order) return
+    let cancelled = false
+    async function fetchRelatedDocs() {
+      setRelatedDocsLoading(true)
+      setRelatedDeliveries(null)
+      setRelatedInvoices(null)
+      try {
+        const data = await getRelatedDocsForOrder(id)
+        if (cancelled) return
+        if (data) {
+          setRelatedDeliveries(data.related_deliveries || [])
+          setRelatedInvoices(data.related_invoices || [])
+        } else {
+          setRelatedDeliveries([])
+          setRelatedInvoices([])
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setRelatedDeliveries([])
+          setRelatedInvoices([])
+        }
+      } finally {
+        if (!cancelled) setRelatedDocsLoading(false)
+      }
+    }
+    fetchRelatedDocs()
+    return () => { cancelled = true }
+  }, [id, order])
   const downloadOrder = async () => {
     if (!order) {
       toast({
@@ -436,6 +465,80 @@ export default function SalesOrderDetail() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Related Deliveries and Invoices - fetched in background, shown below items */}
+      <div className="grid gap-6 md:grid-cols-2">
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              {t('Related Delivery Notes')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {relatedDocsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : relatedDeliveries && relatedDeliveries.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center py-2 border-b text-sm font-medium text-muted-foreground">
+                  <span>{t('ID')}</span>
+                  <span>{t('Amount')}</span>
+                </div>
+                {relatedDeliveries.map((dn) => (
+                  <div key={dn.name} className="flex justify-between items-center py-2 border-b last:border-b-0">
+                    <Link
+                      to={`/delivery-notes/${dn.name}`}
+                      className="font-medium text-blue-600 hover:underline"
+                    >
+                      {dn.name}
+                    </Link>
+                    <DualCurrencyDisplay amount={dn.amount} currency={dn.currency || order.currency} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('No related delivery notes')}</p>
+            )}
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <Receipt className="h-4 w-4" />
+              {t('Related Invoices')}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {relatedDocsLoading ? (
+              <div className="flex items-center justify-center py-8">
+                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+              </div>
+            ) : relatedInvoices && relatedInvoices.length > 0 ? (
+              <div className="space-y-2">
+                <div className="flex justify-between items-center py-2 border-b text-sm font-medium text-muted-foreground">
+                  <span>{t('ID')}</span>
+                  <span>{t('Amount')}</span>
+                </div>
+                {relatedInvoices.map((inv) => (
+                  <div key={inv.name} className="flex justify-between items-center py-2 border-b last:border-b-0">
+                    <Link
+                      to={`/sales-invoices/${inv.name}`}
+                      className="font-medium text-blue-600 hover:underline"
+                    >
+                      {inv.name}
+                    </Link>
+                    <DualCurrencyDisplay amount={inv.amount} currency={inv.currency || order.currency} />
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">{t('No related invoices')}</p>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {deliveryPercentage < 100 && (
         <Card className="border-l-4 border-l-blue-500 bg-blue-50 dark:bg-blue-900/20">

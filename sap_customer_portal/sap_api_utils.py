@@ -1,4 +1,5 @@
 import frappe
+import re
 import requests
 import json
 import base64
@@ -541,6 +542,88 @@ def get_customer_order_detail_from_sap(customer_code, doc_num):
     except Exception as e:
         frappe.logger().error(f"Error fetching SAP order detail: {str(e)}")
         return None
+
+
+def _comments_reference_order(comments, order_doc_num):
+    """Check if Comments field references the given sales order number.
+    SAP format: 'AR SOHAIL Based on Sales Orders 2402647.' or '...Based on Sales Orders 2402647. Based on Deliveries...'
+    Uses word boundary to avoid partial matches (e.g. 2402647 vs 24026470)."""
+    if not comments or order_doc_num is None:
+        return False
+    comments_str = str(comments)
+    order_str = str(order_doc_num)
+    # Match order number as whole word (not part of larger number)
+    pattern = r'\b' + re.escape(order_str) + r'\b'
+    return bool(re.search(pattern, comments_str))
+
+
+def get_related_deliveries_for_order(customer_code, order_doc_num, session_cookies=None):
+    """Fetch delivery notes linked to a sales order by parsing Comments field.
+    Comments format: 'AR SOHAIL Based on Sales Orders 2402647.'
+    Returns list of {name, amount, currency} for display on order detail page."""
+    try:
+        if order_doc_num is None or order_doc_num == '':
+            return []
+        params = {
+            '$filter': f"CardCode eq '{customer_code}'",
+            '$select': 'DocNum,DocTotal,DocCurrency,Comments',
+            '$orderby': 'DocDate desc',
+            '$top': 200,
+        }
+        data = fetch_sap_data_with_session('DeliveryNotes', params, None, session_cookies=session_cookies)
+        if isinstance(data, dict) and 'value' in data:
+            batch = data['value'] or []
+        elif isinstance(data, list):
+            batch = data
+        else:
+            return []
+        result = []
+        for dn in batch:
+            if _comments_reference_order(dn.get('Comments'), order_doc_num):
+                result.append({
+                    'name': str(dn.get('DocNum', '')),
+                    'amount': dn.get('DocTotal', 0),
+                    'currency': dn.get('DocCurrency', '') or 'SAR',
+                })
+        return result
+    except Exception as e:
+        frappe.logger().error(f"Error fetching related deliveries for order: {str(e)}")
+        return []
+
+
+def get_related_invoices_for_order(customer_code, order_doc_num, session_cookies=None):
+    """Fetch invoices linked to a sales order by parsing Comments field.
+    Comments format: 'AR SOHAIL Based on Sales Orders 2402647. Based on Deliveries 24201289.'
+    Returns list of {name, amount, currency} for display on order detail page."""
+    try:
+        if order_doc_num is None or order_doc_num == '':
+            return []
+        params = {
+            '$filter': f"CardCode eq '{customer_code}'",
+            '$select': 'DocNum,DocTotal,DocCurrency,Comments',
+            '$orderby': 'DocDate desc',
+            '$top': 200,
+        }
+        data = fetch_sap_data_with_session('Invoices', params, None, session_cookies=session_cookies)
+        if isinstance(data, dict) and 'value' in data:
+            batch = data['value'] or []
+        elif isinstance(data, list):
+            batch = data
+        else:
+            return []
+        result = []
+        for inv in batch:
+            if _comments_reference_order(inv.get('Comments'), order_doc_num):
+                result.append({
+                    'name': str(inv.get('DocNum', '')),
+                    'amount': inv.get('DocTotal', 0),
+                    'currency': inv.get('DocCurrency', '') or 'SAR',
+                })
+        return result
+    except Exception as e:
+        frappe.logger().error(f"Error fetching related invoices for order: {str(e)}")
+        return []
+
 
 def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cookies=None):
     """Fetch customer delivery notes from SAP B1 with pagination support"""

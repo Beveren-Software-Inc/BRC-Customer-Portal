@@ -598,7 +598,10 @@ def get_customer_order_detail(doc_num: str = None):
         detail = sap_api_utils.get_customer_order_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Order not found"}
-        
+
+        # Related deliveries/invoices are fetched separately via get_related_docs_for_order
+        # to avoid blocking the order detail load (they use Comments parsing which is slower)
+
         # Enrich with customer information from Frappe
         customer_info = get_customer_info_from_frappe(customer_code)
         if customer_info:
@@ -613,6 +616,35 @@ def get_customer_order_detail(doc_num: str = None):
     except Exception as e:
         frappe.log_error(f"Error fetching order detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching order detail: {str(e)}"}
+
+
+@frappe.whitelist()
+def get_related_docs_for_order(doc_num: str = None):
+    """Get related delivery notes and invoices for a sales order (by DocNum).
+    Uses Comments field parsing - called separately so order detail loads fast, this runs in background."""
+    try:
+        customer_code = sap_api_utils.get_customer_code_from_user()
+        if not customer_code:
+            return {"error": True, "message": "No customer code found for current user"}
+        if not doc_num:
+            return {"error": True, "message": "Missing doc_num"}
+        try:
+            related_deliveries = sap_api_utils.get_related_deliveries_for_order(customer_code, doc_num)
+            related_invoices = sap_api_utils.get_related_invoices_for_order(customer_code, doc_num)
+        except Exception as rel_err:
+            frappe.logger().warning(f"[API] Failed to fetch related docs for order: {str(rel_err)}")
+            related_deliveries = []
+            related_invoices = []
+        return {
+            "success": True,
+            "data": {
+                "related_deliveries": related_deliveries,
+                "related_invoices": related_invoices,
+            },
+        }
+    except Exception as e:
+        frappe.log_error(f"Error fetching related docs for order: {str(e)}", "Customer Portal")
+        return {"error": True, "message": f"Error fetching related docs: {str(e)}"}
 
 
 @frappe.whitelist()
