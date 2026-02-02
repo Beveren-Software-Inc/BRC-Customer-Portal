@@ -104,9 +104,12 @@ export default function DeliveryNotesList() {
   // Support comma-separated status filter
   const statusFilterArray = statusFilter === "all" ? [] : statusFilter.split(",").map(s => s.trim().toLowerCase());
   const filteredData = deliveries.filter((note: DeliveryNote) => {
+    const searchLower = (searchTerm || "").toLowerCase();
     const matchesSearch =
-      String(note.name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-      String(note.customer || '').toLowerCase().includes(searchTerm.toLowerCase());
+      !searchLower ||
+      String(note.name || '').toLowerCase().includes(searchLower) ||
+      String(note.customer || '').toLowerCase().includes(searchLower) ||
+      String(note.po_no || '').toLowerCase().includes(searchLower);
     const matchesStatus =
       statusFilter === "all" ||
       statusFilterArray.includes(String(note.status || '').toLowerCase());
@@ -251,6 +254,11 @@ export default function DeliveryNotesList() {
                           <div className="text-sm text-muted-foreground mt-1 truncate max-w-[200px]">
                             {delivery.customer}
                           </div>
+                          {delivery.po_no ? (
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {t('PO')}: {delivery.po_no}
+                            </div>
+                          ) : null}
                         </div>
                         <Badge variant={getStatusColor(delivery.status)}>
                           {delivery.status}
@@ -337,6 +345,7 @@ export default function DeliveryNotesList() {
                   <TableHeader>
                     <TableRow>
                       <TableHead>{t('Delivery ID')}</TableHead>
+                      <TableHead className="hidden lg:table-cell">{t('PO Reference')}</TableHead>
                       <TableHead>{t('Customer')}</TableHead>
                       <TableHead>{t('Delivery Date')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Return')}</TableHead>
@@ -381,6 +390,9 @@ export default function DeliveryNotesList() {
                             >
                               {delivery.name}
                             </Link>
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell text-muted-foreground">
+                            {delivery.po_no || '—'}
                           </TableCell>
                           <TableCell>{delivery.customer}</TableCell>
                           <TableCell>
@@ -429,7 +441,7 @@ export default function DeliveryNotesList() {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={6}>
+                        <TableCell colSpan={8}>
                           <div className="flex flex-col items-center justify-center py-12">
                             <div className="bg-green-50 p-4 rounded-full mb-4">
                               <Package className="h-10 w-10 text-green-500" />

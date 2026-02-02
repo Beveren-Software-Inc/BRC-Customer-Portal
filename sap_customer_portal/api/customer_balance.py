@@ -186,6 +186,36 @@ def _get_customer_codes_for_dashboard():
         codes = [single]
     return codes
 
+
+def _should_hide_sales_orders():
+    """Return True if any of the current user's linked customers has custom_hide_sales_order_in_portal set.
+    Uses Portal User to resolve Customer documents, then checks the custom field."""
+    try:
+        current_user = frappe.session.user
+        portal_customers = frappe.get_all(
+            "Portal User",
+            filters={"user": current_user, "parenttype": "Customer"},
+            pluck="parent"
+        )
+        if not portal_customers:
+            user_email = frappe.db.get_value("User", current_user, "email")
+            if user_email:
+                portal_customers = frappe.get_all(
+                    "Customer", filters={"email_id": user_email}, pluck="name"
+                )
+        if not portal_customers:
+            return False
+        for customer_name in portal_customers:
+            hidden = frappe.db.get_value(
+                "Customer", customer_name, "custom_hide_sales_order_in_portal"
+            )
+            if hidden:
+                return True
+        return False
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Error checking hide_sales_orders: {str(e)}")
+        return False
+
 def _initialize_sap_session():
     """Initialize SAP session and return session cookies"""
     session_cookies = sap_api_utils.get_or_create_sap_session()
@@ -480,6 +510,7 @@ def get_customer_dashboard_data():
         )
         
         if cached_dashboard is not None:
+            cached_dashboard["hide_sales_orders"] = _should_hide_sales_orders()
             return cached_dashboard
         
         # Get customer codes
@@ -488,6 +519,7 @@ def get_customer_dashboard_data():
             return {
                 "error": False,
                 "has_customers": False,
+                "hide_sales_orders": False,
                 "message": "No customer code found for current user"
             }
 
@@ -521,7 +553,8 @@ def get_customer_dashboard_data():
             customer_info, invoices, orders, delivery_notes,
             invoice_summary, order_summary, delivery_summary
         )
-        
+        result["hide_sales_orders"] = _should_hide_sales_orders()
+
         # Cache result
         sap_api_utils.set_cached_data(
             dashboard_cache_key, 
@@ -565,7 +598,10 @@ def get_customer_order_detail(doc_num: str = None):
         detail = sap_api_utils.get_customer_order_detail_from_sap(customer_code, doc_num)
         if not detail:
             return {"error": True, "message": "Order not found"}
-        
+
+        # Related deliveries/invoices are fetched separately via get_related_docs_for_order
+        # to avoid blocking the order detail load (they use Comments parsing which is slower)
+
         # Enrich with customer information from Frappe
         customer_info = get_customer_info_from_frappe(customer_code)
         if customer_info:
@@ -580,6 +616,35 @@ def get_customer_order_detail(doc_num: str = None):
     except Exception as e:
         frappe.log_error(f"Error fetching order detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching order detail: {str(e)}"}
+
+
+@frappe.whitelist()
+def get_related_docs_for_order(doc_num: str = None):
+    """Get related delivery notes and invoices for a sales order (by DocNum).
+    Uses Comments field parsing - called separately so order detail loads fast, this runs in background."""
+    try:
+        customer_code = sap_api_utils.get_customer_code_from_user()
+        if not customer_code:
+            return {"error": True, "message": "No customer code found for current user"}
+        if not doc_num:
+            return {"error": True, "message": "Missing doc_num"}
+        try:
+            related_deliveries = sap_api_utils.get_related_deliveries_for_order(customer_code, doc_num)
+            related_invoices = sap_api_utils.get_related_invoices_for_order(customer_code, doc_num)
+        except Exception as rel_err:
+            frappe.logger().warning(f"[API] Failed to fetch related docs for order: {str(rel_err)}")
+            related_deliveries = []
+            related_invoices = []
+        return {
+            "success": True,
+            "data": {
+                "related_deliveries": related_deliveries,
+                "related_invoices": related_invoices,
+            },
+        }
+    except Exception as e:
+        frappe.log_error(f"Error fetching related docs for order: {str(e)}", "Customer Portal")
+        return {"error": True, "message": f"Error fetching related docs: {str(e)}"}
 
 
 @frappe.whitelist()

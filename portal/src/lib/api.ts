@@ -125,6 +125,8 @@ export interface SalesOrder {
   allow_partial_delivery?: boolean;
   brc_logo_url?: string;
   vision2030_logo_url?: string;
+  related_deliveries?: { name: string; amount: number; currency: string }[];
+  related_invoices?: { name: string; amount: number; currency: string }[];
 }
 
 export async function getSapSalesOrderDetail(docNum: string): Promise<SalesOrder | null> {
@@ -139,6 +141,27 @@ export async function getSapSalesOrderDetail(docNum: string): Promise<SalesOrder
     }
   } catch (error) {
     console.error("Error fetching order detail:", error);
+    return null;
+  }
+}
+
+export interface RelatedDocsForOrder {
+  related_deliveries: { name: string; amount: number; currency: string }[];
+  related_invoices: { name: string; amount: number; currency: string }[];
+}
+
+export async function getRelatedDocsForOrder(docNum: string): Promise<RelatedDocsForOrder | null> {
+  try {
+    const response = await fetch(`/api/method/sap_customer_portal.api.customer_balance.get_related_docs_for_order?doc_num=${encodeURIComponent(docNum)}`);
+    const data = await response.json();
+    if (data.message && data.message.success) {
+      return data.message.data as RelatedDocsForOrder;
+    } else {
+      console.error("Error fetching related docs from SAP:", data.message?.message);
+      return null;
+    }
+  } catch (error) {
+    console.error("Error fetching related docs:", error);
     return null;
   }
 }
@@ -243,6 +266,7 @@ export interface SalesInvoice {
   is_return?: number;
   return_against?: string;
   customer_tax_id?: string;
+  po_no?: string;
   brc_logo_url?: string;
   vision2030_logo_url?: string;
 }
@@ -491,14 +515,18 @@ export async function getCustomerDashboardData(): Promise<any> {
     
     // Check if user has no customers
     if (data.message && data.message.has_customers === false) {
-      return { has_customers: false, message: data.message.message };
+      return { has_customers: false, hide_sales_orders: false, message: data.message.message };
     }
-    
+
     if (data.message && data.message.success) {
-      return { ...data.message.data, has_customers: data.message.has_customers !== false };
+      return {
+        ...data.message.data,
+        has_customers: data.message.has_customers !== false,
+        hide_sales_orders: data.message.hide_sales_orders === true,
+      };
     } else {
       console.error("Error fetching dashboard data from SAP:", data.message?.message);
-      return { has_customers: false, error: true, message: data.message?.message };
+      return { has_customers: false, hide_sales_orders: false, error: true, message: data.message?.message };
     }
   } catch (error: any) {
     clearTimeout(timeoutId);

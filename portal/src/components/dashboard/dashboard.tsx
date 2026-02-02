@@ -33,6 +33,7 @@ import { useTranslation } from "react-i18next";
 import { useNavigate, Link } from "react-router-dom";
 import { getMonthlySalesOrderStats, MonthlySalesOrderStat, getCustomerDashboardData } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
+import { useCustomer } from "@/context/customer-context";
 import CustomerAging from "../sales-invoices/customer_ageing";
 import CustomerBalanceCard from "./customer-balance-card";
 // DebugSap removed per request
@@ -62,6 +63,7 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { hideSalesOrders } = useCustomer();
 
   // State for dashboard data with proper types
   const [summaryData, setSummaryData] = useState<SummaryItem[]>([]);
@@ -460,14 +462,16 @@ export default function Dashboard() {
         currency: inv.currency,
       }));
 
-      const recentOrderActivities = processedData.salesOrders.map((order) => ({
-        id: order.name,
-        date: order.transaction_date || order.posting_date,
-        type: "Sales Order",
-        status: order.status,
-        amount: order.grand_total || 0,
-        currency: order.currency,
-      }));
+      const recentOrderActivities = hideSalesOrders
+        ? []
+        : processedData.salesOrders.map((order: any) => ({
+            id: order.name,
+            date: order.transaction_date || order.posting_date,
+            type: "Sales Order",
+            status: order.status,
+            amount: order.grand_total || 0,
+            currency: order.currency,
+          }));
 
       const recentQuoteActivities = processedData.quotations.map((quote) => ({
         id: quote.name,
@@ -506,16 +510,16 @@ export default function Dashboard() {
         })
         .slice(0, 5); // Get top 5 most recent
 
-      // Format summary data with your requested cards
-      const summary = [
-        {
+      // Format summary data with your requested cards (omit Open Orders when Sales Orders tab is hidden)
+      const summaryBase = [
+        ...(hideSalesOrders ? [] : [{
           title: "Open Orders",
           value: typeof undeliveredOrders === 'number' ? undeliveredOrders : undeliveredOrders.length,
           count: typeof undeliveredOrders === 'number' ? undeliveredOrders.toString() : undeliveredOrders.length.toString(),
           icon: <BarChart3 className="h-4 w-4 text-muted-foreground" />,
           color: "bg-amber-100 dark:bg-amber-900",
           textColor: "text-amber-800 dark:text-amber-300",
-        },
+        }]),
         {
           title: "Open Deliveries",
           value: unbilledDeliveriesTotal,
@@ -536,8 +540,8 @@ export default function Dashboard() {
           textColor: "text-red-800 dark:text-red-300",
           currency: "SAR",
         },
-        
       ];
+      const summary = summaryBase;
 
         // Only update state if values actually changed to prevent re-render loops
         const summaryChanged = JSON.stringify(summaryData) !== JSON.stringify(summary);
@@ -564,7 +568,7 @@ export default function Dashboard() {
         window.cancelAnimationFrame(rafId);
       }
     };
-  }, [sapDashboardData, sapDashboardOrdersLen, sapDashboardInvoicesLen, sapDashboardDeliveriesLen, erpOrdersLen, erpInvoicesLen, erpDeliveriesLen, hasSapSummary, hasSapData, salesOrders, invoices, deliveryNotes, quotations]);
+  }, [sapDashboardData, sapDashboardOrdersLen, sapDashboardInvoicesLen, sapDashboardDeliveriesLen, erpOrdersLen, erpInvoicesLen, erpDeliveriesLen, hasSapSummary, hasSapData, salesOrders, invoices, deliveryNotes, quotations, hideSalesOrders]);
 
   // Separate effect to handle first load completion
   useEffect(() => {

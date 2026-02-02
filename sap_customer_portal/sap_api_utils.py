@@ -1,4 +1,5 @@
 import frappe
+import re
 import requests
 import json
 import base64
@@ -409,7 +410,7 @@ def get_customer_orders_from_sap(customer_code, limit=500, session_cookies=None)
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -441,7 +442,8 @@ def get_customer_orders_from_sap(customer_code, limit=500, session_cookies=None)
                     'transaction_date': order.get('DocDate'),
                     'grand_total': order.get('DocTotal', 0),
                     'currency': order.get('DocCurrency', ''),
-                    'status': status
+                    'status': status,
+                    'po_no': order.get('NumAtCard') or '',
                 }
                 all_orders.append(order_data)
             
@@ -541,6 +543,88 @@ def get_customer_order_detail_from_sap(customer_code, doc_num):
         frappe.logger().error(f"Error fetching SAP order detail: {str(e)}")
         return None
 
+
+def _comments_reference_order(comments, order_doc_num):
+    """Check if Comments field references the given sales order number.
+    SAP format: 'AR SOHAIL Based on Sales Orders 2402647.' or '...Based on Sales Orders 2402647. Based on Deliveries...'
+    Uses word boundary to avoid partial matches (e.g. 2402647 vs 24026470)."""
+    if not comments or order_doc_num is None:
+        return False
+    comments_str = str(comments)
+    order_str = str(order_doc_num)
+    # Match order number as whole word (not part of larger number)
+    pattern = r'\b' + re.escape(order_str) + r'\b'
+    return bool(re.search(pattern, comments_str))
+
+
+def get_related_deliveries_for_order(customer_code, order_doc_num, session_cookies=None):
+    """Fetch delivery notes linked to a sales order by parsing Comments field.
+    Comments format: 'AR SOHAIL Based on Sales Orders 2402647.'
+    Returns list of {name, amount, currency} for display on order detail page."""
+    try:
+        if order_doc_num is None or order_doc_num == '':
+            return []
+        params = {
+            '$filter': f"CardCode eq '{customer_code}'",
+            '$select': 'DocNum,DocTotal,DocCurrency,Comments',
+            '$orderby': 'DocDate desc',
+            '$top': 200,
+        }
+        data = fetch_sap_data_with_session('DeliveryNotes', params, None, session_cookies=session_cookies)
+        if isinstance(data, dict) and 'value' in data:
+            batch = data['value'] or []
+        elif isinstance(data, list):
+            batch = data
+        else:
+            return []
+        result = []
+        for dn in batch:
+            if _comments_reference_order(dn.get('Comments'), order_doc_num):
+                result.append({
+                    'name': str(dn.get('DocNum', '')),
+                    'amount': dn.get('DocTotal', 0),
+                    'currency': dn.get('DocCurrency', '') or 'SAR',
+                })
+        return result
+    except Exception as e:
+        frappe.logger().error(f"Error fetching related deliveries for order: {str(e)}")
+        return []
+
+
+def get_related_invoices_for_order(customer_code, order_doc_num, session_cookies=None):
+    """Fetch invoices linked to a sales order by parsing Comments field.
+    Comments format: 'AR SOHAIL Based on Sales Orders 2402647. Based on Deliveries 24201289.'
+    Returns list of {name, amount, currency} for display on order detail page."""
+    try:
+        if order_doc_num is None or order_doc_num == '':
+            return []
+        params = {
+            '$filter': f"CardCode eq '{customer_code}'",
+            '$select': 'DocNum,DocTotal,DocCurrency,Comments',
+            '$orderby': 'DocDate desc',
+            '$top': 200,
+        }
+        data = fetch_sap_data_with_session('Invoices', params, None, session_cookies=session_cookies)
+        if isinstance(data, dict) and 'value' in data:
+            batch = data['value'] or []
+        elif isinstance(data, list):
+            batch = data
+        else:
+            return []
+        result = []
+        for inv in batch:
+            if _comments_reference_order(inv.get('Comments'), order_doc_num):
+                result.append({
+                    'name': str(inv.get('DocNum', '')),
+                    'amount': inv.get('DocTotal', 0),
+                    'currency': inv.get('DocCurrency', '') or 'SAR',
+                })
+        return result
+    except Exception as e:
+        frappe.logger().error(f"Error fetching related invoices for order: {str(e)}")
+        return []
+
+
 def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cookies=None):
     """Fetch customer delivery notes from SAP B1 with pagination support"""
     try:
@@ -560,7 +644,7 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cooki
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -596,7 +680,8 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cooki
                     'grand_total': dn.get('DocTotal', 0),
                     'currency': dn.get('DocCurrency', ''),
                     'status': status,
-                    'comments': dn.get('Comments', '')
+                    'comments': dn.get('Comments', ''),
+                    'po_no': dn.get('NumAtCard') or '',
                 }
                 all_delivery_notes.append(dn_data)
             
@@ -650,7 +735,7 @@ def get_customer_delivery_returns_from_sap(customer_code, limit=500, session_coo
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -685,6 +770,7 @@ def get_customer_delivery_returns_from_sap(customer_code, limit=500, session_coo
                     'status': status,
                     'comments': rn.get('Comments', ''),
                     'is_return': 1,
+                    'po_no': rn.get('NumAtCard') or '',
                 }
                 all_returns.append(rn_data)
 
@@ -781,7 +867,7 @@ def get_customer_invoices_from_sap(customer_code, limit=500, session_cookies=Non
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -825,7 +911,8 @@ def get_customer_invoices_from_sap(customer_code, limit=500, session_cookies=Non
                     'paid_amount': paid_amount,
                     'currency': inv.get('DocCurrency', ''),
                     'status': status,
-                    'comments': inv.get('Comments', '')
+                    'comments': inv.get('Comments', ''),
+                    'po_no': inv.get('NumAtCard') or '',
                 }
                 all_invoices.append(inv_data)
             
@@ -879,7 +966,7 @@ def get_customer_credit_notes_from_sap(customer_code, limit=500, session_cookies
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocDueDate,DocTotal,DocCurrency,DocumentStatus,Comments,PaidToDate,NumAtCard',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -921,6 +1008,7 @@ def get_customer_credit_notes_from_sap(customer_code, limit=500, session_cookies
                     'status': status,
                     'comments': cn.get('Comments', ''),
                     'is_return': 1,
+                    'po_no': cn.get('NumAtCard') or '',
                 }
                 all_notes.append(note_data)
 
