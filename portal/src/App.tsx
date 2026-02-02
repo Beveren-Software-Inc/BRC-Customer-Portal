@@ -51,11 +51,11 @@ export default function App() {
                       {/* Dashboard - always accessible */}
                       <Route path="/" element={<Dashboard />} />
 
-                      {/* Sales Orders - requires customer */}
+                      {/* Sales Orders - requires customer and visible (hidden when custom_hide_sales_order_in_portal on Customer) */}
                       <Route 
                         path="/sales-orders" 
                         element={
-                          <ProtectedRoute requireCustomer={true}>
+                          <ProtectedRoute requireCustomer={true} requireSalesOrdersVisible={true}>
                             <SalesOrdersList />
                           </ProtectedRoute>
                         } 
@@ -63,7 +63,7 @@ export default function App() {
                       <Route
                         path="/sales-orders/:id"
                         element={
-                          <ProtectedRoute requireCustomer={true}>
+                          <ProtectedRoute requireCustomer={true} requireSalesOrdersVisible={true}>
                             <SalesOrderDetail />
                           </ProtectedRoute>
                         }

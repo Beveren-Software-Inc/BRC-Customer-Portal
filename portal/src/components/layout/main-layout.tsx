@@ -39,7 +39,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isMobile = useMobile();
-  const { hasCustomers } = useCustomer();
+  const { hasCustomers, hideSalesOrders } = useCustomer();
 
   // Use our custom hook to get portal settings
   const { logoUrl, iconUrl } = usePortalSettings();
@@ -88,6 +88,11 @@ export default function MainLayout({ children }: MainLayoutProps) {
     // { name: t("Support Tickets"), icon: TicketCheck, path: "/support-tickets" },
     // { name: t("Documents"), icon: FolderOpen, path: "/documents" },
   ];
+
+  // Hide Sales Orders tab when any linked customer has custom_hide_sales_order_in_portal
+  const visibleMenuItems = hideSalesOrders
+    ? menuItems.filter((item) => item.path !== "/sales-orders")
+    : menuItems;
 
   // Determine if a menu item should be disabled
   const isItemDisabled = (item: typeof menuItems[0]) => {
@@ -154,7 +159,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
           {/* Menu items */}
           <div className="py-4 flex-grow">
             <ul className="space-y-1 px-2">
-              {menuItems.map((item) => {
+              {visibleMenuItems.map((item) => {
                 const disabled = isItemDisabled(item);
                 return (
                   <li key={item.name}>

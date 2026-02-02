@@ -491,14 +491,18 @@ export async function getCustomerDashboardData(): Promise<any> {
     
     // Check if user has no customers
     if (data.message && data.message.has_customers === false) {
-      return { has_customers: false, message: data.message.message };
+      return { has_customers: false, hide_sales_orders: false, message: data.message.message };
     }
-    
+
     if (data.message && data.message.success) {
-      return { ...data.message.data, has_customers: data.message.has_customers !== false };
+      return {
+        ...data.message.data,
+        has_customers: data.message.has_customers !== false,
+        hide_sales_orders: data.message.hide_sales_orders === true,
+      };
     } else {
       console.error("Error fetching dashboard data from SAP:", data.message?.message);
-      return { has_customers: false, error: true, message: data.message?.message };
+      return { has_customers: false, hide_sales_orders: false, error: true, message: data.message?.message };
     }
   } catch (error: any) {
     clearTimeout(timeoutId);

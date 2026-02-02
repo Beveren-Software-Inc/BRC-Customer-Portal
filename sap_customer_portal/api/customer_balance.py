@@ -186,6 +186,36 @@ def _get_customer_codes_for_dashboard():
         codes = [single]
     return codes
 
+
+def _should_hide_sales_orders():
+    """Return True if any of the current user's linked customers has custom_hide_sales_order_in_portal set.
+    Uses Portal User to resolve Customer documents, then checks the custom field."""
+    try:
+        current_user = frappe.session.user
+        portal_customers = frappe.get_all(
+            "Portal User",
+            filters={"user": current_user, "parenttype": "Customer"},
+            pluck="parent"
+        )
+        if not portal_customers:
+            user_email = frappe.db.get_value("User", current_user, "email")
+            if user_email:
+                portal_customers = frappe.get_all(
+                    "Customer", filters={"email_id": user_email}, pluck="name"
+                )
+        if not portal_customers:
+            return False
+        for customer_name in portal_customers:
+            hidden = frappe.db.get_value(
+                "Customer", customer_name, "custom_hide_sales_order_in_portal"
+            )
+            if hidden:
+                return True
+        return False
+    except Exception as e:
+        frappe.logger().warning(f"[Dashboard] Error checking hide_sales_orders: {str(e)}")
+        return False
+
 def _initialize_sap_session():
     """Initialize SAP session and return session cookies"""
     session_cookies = sap_api_utils.get_or_create_sap_session()
@@ -480,6 +510,7 @@ def get_customer_dashboard_data():
         )
         
         if cached_dashboard is not None:
+            cached_dashboard["hide_sales_orders"] = _should_hide_sales_orders()
             return cached_dashboard
         
         # Get customer codes
@@ -488,6 +519,7 @@ def get_customer_dashboard_data():
             return {
                 "error": False,
                 "has_customers": False,
+                "hide_sales_orders": False,
                 "message": "No customer code found for current user"
             }
 
@@ -521,7 +553,8 @@ def get_customer_dashboard_data():
             customer_info, invoices, orders, delivery_notes,
             invoice_summary, order_summary, delivery_summary
         )
-        
+        result["hide_sales_orders"] = _should_hide_sales_orders()
+
         # Cache result
         sap_api_utils.set_cached_data(
             dashboard_cache_key, 

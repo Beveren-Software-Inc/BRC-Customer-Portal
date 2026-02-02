@@ -24,6 +24,17 @@ add_to_apps_screen = [
 	}
 ]
 
+
+fixtures = [
+    {
+        "doctype": "Custom Field",
+        "filters": [
+            ["name", "in", [
+                "Customer-custom_hide_sales_order_in_portal"
+            ]]
+        ]
+    }
+]
 # Includes in <head>
 # ------------------
 
