@@ -20,7 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Eye, Search, Package, Download, RefreshCw, Loader2 } from "lucide-react";
+import { Eye, Search, Package, Download, RefreshCw, Loader2, FileSignature } from "lucide-react";
 import { formatDate, getStatusColor } from "@/lib/utils";
 import { Link, useLocation } from "react-router-dom";
 import { DataTablePagination } from "../ui/data-table-pagination";
@@ -278,7 +278,19 @@ export default function DeliveryNotesList() {
                           }).format(delivery.grand_total)}
                         </div>
                       </div>
-                      <div className="mt-3 flex justify-end gap-2">
+                      <div className="mt-3 flex justify-end gap-2 flex-wrap">
+                        {delivery.attachment_entry ? (
+                          <Button variant="outline" size="sm" asChild>
+                            <a
+                              href={`/api/method/sap_customer_portal.api.customer_balance.get_delivery_note_attachment?doc_num=${encodeURIComponent(delivery.name)}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                            >
+                              <FileSignature className="h-3.5 w-3.5 mr-1" />
+                              {t('Signature')}
+                            </a>
+                          </Button>
+                        ) : null}
                         <Button variant="outline" size="sm" asChild>
                           <Link to={`/delivery-notes/${delivery.name}`}>
                             <Eye className="h-3.5 w-3.5 mr-1" />
@@ -350,6 +362,7 @@ export default function DeliveryNotesList() {
                       <TableHead>{t('Delivery Date')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Return')}</TableHead>
                       <TableHead>{t('Status')}</TableHead>
+                      <TableHead className="text-center">{t('Signature')}</TableHead>
                       <TableHead className="text-right">{t('Value')}</TableHead>
                       <TableHead className="text-right">{t('Actions')}</TableHead>
                     </TableRow>
@@ -360,24 +373,15 @@ export default function DeliveryNotesList() {
                         .fill(0)
                         .map((_, i) => (
                           <TableRow key={i}>
-                            <TableCell>
-                              <Skeleton className="h-5 w-24" />
-                            </TableCell>
-                            <TableCell>
-                              <Skeleton className="h-5 w-32" />
-                            </TableCell>
-                            <TableCell>
-                              <Skeleton className="h-5 w-24" />
-                            </TableCell>
-                            <TableCell>
-                              <Skeleton className="h-5 w-16" />
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Skeleton className="h-5 w-20 ml-auto" />
-                            </TableCell>
-                            <TableCell className="text-right">
-                              <Skeleton className="h-5 w-16 ml-auto" />
-                            </TableCell>
+                            <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                            <TableCell><Skeleton className="h-5 w-32" /></TableCell>
+                            <TableCell><Skeleton className="h-5 w-24" /></TableCell>
+                            <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                            <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                            <TableCell><Skeleton className="h-5 w-16" /></TableCell>
+                            <TableCell className="text-center"><Skeleton className="h-5 w-8 mx-auto" /></TableCell>
+                            <TableCell className="text-right"><Skeleton className="h-5 w-20 ml-auto" /></TableCell>
+                            <TableCell className="text-right"><Skeleton className="h-5 w-16 ml-auto" /></TableCell>
                           </TableRow>
                         ))
                     ) : paginatedData.length > 0 ? (
@@ -407,6 +411,22 @@ export default function DeliveryNotesList() {
                             <Badge variant={getStatusColor(delivery.status)}>
                               {delivery.status}
                             </Badge>
+                          </TableCell>
+                          <TableCell className="text-center">
+                            {delivery.attachment_entry ? (
+                              <a
+                                href={`/api/method/sap_customer_portal.api.customer_balance.get_delivery_note_attachment?doc_num=${encodeURIComponent(delivery.name)}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center justify-center text-muted-foreground hover:text-primary"
+                                title={t('View signed delivery note')}
+                              >
+                                <FileSignature className="h-4 w-4" />
+                                <span className="sr-only">{t('View signature')}</span>
+                              </a>
+                            ) : (
+                              <span className="text-muted-foreground">—</span>
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             <DualCurrencyDisplay
@@ -441,7 +461,7 @@ export default function DeliveryNotesList() {
                       ))
                     ) : (
                       <TableRow>
-                        <TableCell colSpan={8}>
+                        <TableCell colSpan={9}>
                           <div className="flex flex-col items-center justify-center py-12">
                             <div className="bg-green-50 p-4 rounded-full mb-4">
                               <Package className="h-10 w-10 text-green-500" />

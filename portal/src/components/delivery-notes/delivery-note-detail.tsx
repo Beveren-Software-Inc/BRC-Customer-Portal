@@ -25,6 +25,7 @@ import {
   UserCircle,
   TruckIcon,
   Download,
+  FileSignature,
 } from "lucide-react";
 import { formatDate, getStatusColor } from "@/lib/utils";
 import { Link, useParams } from "react-router-dom";
@@ -241,8 +242,20 @@ export default function DeliveryNoteDetail() {
           </div>
         </div>
 
-        {/* Add download button */}
-        <div>
+        {/* Add download and signature buttons */}
+        <div className="flex flex-wrap gap-2">
+          {delivery.attachment_entry ? (
+            <Button variant="outline" className="flex items-center gap-2" asChild>
+              <a
+                href={`/api/method/sap_customer_portal.api.customer_balance.get_delivery_note_attachment?doc_num=${encodeURIComponent(delivery.name)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <FileSignature className="h-4 w-4" />
+                {t('View signed delivery note')}
+              </a>
+            </Button>
+          ) : null}
           <Button
             variant="outline"
             className="flex items-center gap-2"

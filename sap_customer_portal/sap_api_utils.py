@@ -353,6 +353,42 @@ def fetch_sap_data_with_session(data_document, params=None, customer_code=None, 
         frappe.log_error(f"SAP data fetch error: {str(e)}", "Customer Portal SAP")
         return None
 
+
+def fetch_sap_attachment_binary(attachment_entry, session_cookies=None):
+    """Fetch attachment file content from SAP B1 Attachments2(entry)/$value.
+    Returns (content_bytes, content_type) or (None, None) on error."""
+    if attachment_entry is None or (isinstance(attachment_entry, (int, float)) and int(attachment_entry) <= 0):
+        return None, None
+    try:
+        settings = get_sap_b1_settings()
+        if not settings:
+            return None, None
+        if session_cookies is None:
+            cookies = get_or_create_sap_session()
+            if not cookies:
+                return None, None
+        else:
+            cookies = session_cookies
+        entry = int(attachment_entry)
+        url = urljoin(settings["server_url"], f"Attachments2({entry})/$value")
+        response = requests.get(url, cookies=cookies, verify=False, timeout=REQUEST_TIMEOUT)
+        if response.status_code == 401 and session_cookies is None:
+            if hasattr(frappe.local, 'sap_session'):
+                delattr(frappe.local, 'sap_session')
+            cookies = get_or_create_sap_session()
+            if cookies:
+                response = requests.get(url, cookies=cookies, verify=False, timeout=REQUEST_TIMEOUT)
+        if response.status_code != 200:
+            frappe.logger().warning(f"SAP attachment {entry} returned {response.status_code}")
+            return None, None
+        content = response.content
+        content_type = response.headers.get('Content-Type') or 'application/octet-stream'
+        return content, content_type
+    except Exception as e:
+        frappe.logger().error(f"Error fetching SAP attachment {attachment_entry}: {str(e)}")
+        return None, None
+
+
 def get_customer_balance_from_sap(customer_code, session_cookies=None):
     """Fetch customer balance directly from SAP B1"""
     try:
@@ -644,7 +680,7 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cooki
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,NumAtCard',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,NumAtCard,AttachmentEntry',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -682,6 +718,7 @@ def get_customer_delivery_notes_from_sap(customer_code, limit=500, session_cooki
                     'status': status,
                     'comments': dn.get('Comments', ''),
                     'po_no': dn.get('NumAtCard') or '',
+                    'attachment_entry': dn.get('AttachmentEntry'),
                 }
                 all_delivery_notes.append(dn_data)
             
@@ -735,7 +772,7 @@ def get_customer_delivery_returns_from_sap(customer_code, limit=500, session_coo
         for batch_num in range(max_batches):
             params = {
                 '$filter': f"CardCode eq '{customer_code}'",
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,NumAtCard',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,NumAtCard,AttachmentEntry',
                 '$orderby': 'DocDate desc',
                 '$top': batch_size,
                 '$skip': skip
@@ -771,6 +808,7 @@ def get_customer_delivery_returns_from_sap(customer_code, limit=500, session_coo
                     'comments': rn.get('Comments', ''),
                     'is_return': 1,
                     'po_no': rn.get('NumAtCard') or '',
+                    'attachment_entry': rn.get('AttachmentEntry'),
                 }
                 all_returns.append(rn_data)
 
@@ -796,7 +834,7 @@ def get_customer_delivery_note_detail_from_sap(customer_code, doc_num):
         def fetch_with_filter(filter_str: str):
             params = {
                 '$filter': filter_str,
-                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,DocumentLines',
+                '$select': 'DocNum,DocEntry,CardCode,CardName,DocDate,DocTotal,DocCurrency,DocumentStatus,Comments,DocumentLines,AttachmentEntry',
             }
             data = fetch_sap_data_with_session('DeliveryNotes', params, None)
             if isinstance(data, dict) and 'value' in data:
@@ -843,6 +881,7 @@ def get_customer_delivery_note_detail_from_sap(customer_code, doc_num):
             'comments': delivery_note.get('Comments', ''),
             'items': items,
             'total_taxes_and_charges': 0,
+            'attachment_entry': delivery_note.get('AttachmentEntry'),
         }
     except Exception as e:
         frappe.logger().error(f"Error fetching SAP delivery note detail: {str(e)}")
