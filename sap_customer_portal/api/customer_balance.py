@@ -677,6 +677,91 @@ def get_customer_delivery_note_detail(doc_num: str = None):
         frappe.log_error(f"Error fetching delivery note detail: {str(e)}", "Customer Portal")
         return {"error": True, "message": f"Error fetching delivery note detail: {str(e)}"}
 
+
+def _extension_from_content_type(content_type):
+    """Return file extension from Content-Type header."""
+    if not content_type:
+        return ".pdf"
+    ct = (content_type or "").split(";")[0].strip().lower()
+    if "image/png" in ct:
+        return ".png"
+    if "image/jpeg" in ct or "image/jpg" in ct:
+        return ".jpg"
+    if "application/pdf" in ct or "pdf" in ct:
+        return ".pdf"
+    return ".pdf"
+
+
+@frappe.whitelist()
+def get_delivery_note_attachment(doc_num: str = None):
+    """Stream the signed delivery note attachment (scanned image/PDF) for a delivery note.
+    Resolves attachment via SAP AttachmentEntry; fetches from SAP if not yet stored, then serves from File."""
+    try:
+        customer_code = sap_api_utils.get_customer_code_from_user()
+        if not customer_code:
+            frappe.local.response.http_status_code = 403
+            return {"error": True, "message": "No customer code found for current user"}
+        if not doc_num:
+            frappe.local.response.http_status_code = 400
+            return {"error": True, "message": "Missing doc_num"}
+        detail = sap_api_utils.get_customer_delivery_note_detail_from_sap(customer_code, doc_num)
+        if not detail:
+            frappe.local.response.http_status_code = 404
+            return {"error": True, "message": "Delivery note not found"}
+        attachment_entry = detail.get("attachment_entry")
+        if not attachment_entry or (isinstance(attachment_entry, (int, float)) and int(attachment_entry) <= 0):
+            frappe.local.response.http_status_code = 404
+            return {"error": True, "message": "No attachment for this delivery note"}
+
+        from frappe.utils.file_manager import save_file, get_file_path
+
+        entry = int(attachment_entry)
+        # Check if we already stored this attachment (by naming convention; Frappe may add suffix to file_name)
+        existing = frappe.db.sql("""
+            SELECT file_name FROM tabFile
+            WHERE file_name LIKE %s AND folder = 'Home/Delivery Note Signatures'
+            LIMIT 1
+        """, (f"delivery_note_signature_{entry}%",), as_dict=True)
+        if existing:
+            stored_name = existing[0].get("file_name")
+            try:
+                path = get_file_path(stored_name)
+                with open(path, "rb") as f:
+                    content = f.read()
+            except Exception as e:
+                frappe.logger().warning(f"Could not read stored file {stored_name}: {e}")
+                content = None
+            if content:
+                frappe.local.response.filename = f"delivery_note_{doc_num}_signature{_extension_from_content_type(None)}"
+                frappe.local.response.filecontent = content
+                frappe.local.response.type = "download"
+                frappe.local.response["Content-Disposition"] = "inline"
+                return None
+
+        # Fetch from SAP and store
+        content, content_type = sap_api_utils.fetch_sap_attachment_binary(entry)
+        if not content:
+            frappe.local.response.http_status_code = 404
+            return {"error": True, "message": "Could not load attachment from SAP"}
+
+        ext = _extension_from_content_type(content_type)
+        fname = f"delivery_note_signature_{entry}{ext}"
+        folder = "Home/Delivery Note Signatures"
+        try:
+            save_file(fname, content, "File", "", folder=folder, is_private=1)
+        except Exception as e:
+            frappe.logger().warning(f"Could not save delivery note attachment: {e}")
+        frappe.local.response.filename = f"delivery_note_{doc_num}_signature{ext}"
+        frappe.local.response.filecontent = content
+        frappe.local.response.type = "download"
+        frappe.local.response["Content-Disposition"] = "inline"
+        return None
+    except Exception as e:
+        frappe.log_error(f"Error in get_delivery_note_attachment: {str(e)}", "Customer Portal")
+        frappe.local.response.http_status_code = 500
+        return {"error": True, "message": str(e)}
+
+
 @frappe.whitelist()
 def get_customer_payments():
     """Get customer payments across all linked customer codes"""
@@ -878,6 +963,45 @@ def get_customer_invoices():
         all_invoices = []
         for code in codes:
             all_invoices.extend(sap_api_utils.get_customer_invoices_from_sap(code, limit=500))
+
+        # Enrich closed invoices with payment info (payment_date, days_to_pay) using JL Entries
+        # Only for fully paid, non-return invoices
+        try:
+            for inv in all_invoices:
+                status = (inv.get("status") or "").lower()
+                outstanding = inv.get("outstanding_amount") or 0
+                is_return = inv.get("is_return") or 0
+                if status == "closed" and outstanding <= 0 and not is_return:
+                    doc_num = inv.get("name")
+                    customer_code = inv.get("customer")
+                    posting_date = inv.get("posting_date")
+                    if not (doc_num and customer_code and posting_date):
+                        continue
+                    like_pattern = f"%{doc_num}%"
+                    rows = frappe.db.sql("""
+                        SELECT MAX(posting_date) AS payment_date
+                        FROM `tabSap JL Entry`
+                        WHERE customer = %s
+                          AND (reference LIKE %s OR line_memo LIKE %s)
+                    """, (customer_code, like_pattern, like_pattern), as_dict=True)
+                    raw_payment_date = rows[0].get("payment_date") if rows and rows[0].get("payment_date") else None
+                    if raw_payment_date:
+                        try:
+                            inv_date = getdate(posting_date)
+                            raw_date = getdate(raw_payment_date)
+                            # If payment happened before invoice (downpayment),
+                            # treat effective payment date as invoice date (days_to_pay = 0)
+                            effective_date = inv_date if raw_date < inv_date else raw_date
+                            inv["payment_date"] = effective_date
+                            inv["days_to_pay"] = (effective_date - inv_date).days
+                        except Exception:
+                            inv["payment_date"] = None
+                            inv["days_to_pay"] = None
+                    else:
+                        inv["payment_date"] = None
+                        inv["days_to_pay"] = None
+        except Exception as e:
+            frappe.logger().warning(f"[Invoices] Failed to enrich payment info from JL Entry: {str(e)}")
 
         all_invoices.sort(key=lambda i: i.get("posting_date") or "", reverse=True)
         return {"success": True, "data": all_invoices}

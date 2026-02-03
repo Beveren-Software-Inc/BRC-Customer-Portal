@@ -387,6 +387,8 @@ export default function InvoicesList() {
                       <TableHead className="hidden md:table-cell">{t('Customer')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Issue Date')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Due Date')}</TableHead>
+                      <TableHead className="hidden lg:table-cell">{t('Payment Date')}</TableHead>
+                      <TableHead className="hidden lg:table-cell text-center">{t('Days to Pay')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Return')}</TableHead>
                       <TableHead>{t('Status')}</TableHead>
                       <TableHead className="text-center">{t('Grand Total')}</TableHead>
@@ -442,6 +444,16 @@ export default function InvoicesList() {
                             {formatDate(invoice.posting_date)}
                           </TableCell>
                           <TableCell>{formatDate(invoice.due_date)}</TableCell>
+                          <TableCell className="hidden lg:table-cell">
+                            {invoice.status?.toLowerCase() === 'closed' && invoice.payment_date
+                              ? formatDate(invoice.payment_date)
+                              : '—'}
+                          </TableCell>
+                          <TableCell className="hidden lg:table-cell text-center">
+                            {invoice.status?.toLowerCase() === 'closed' && typeof invoice.days_to_pay === 'number'
+                              ? invoice.days_to_pay
+                              : '—'}
+                          </TableCell>
                           <TableCell className="hidden sm:table-cell">
                             {invoice.is_return ? (
                               <Badge variant="destructive">{t('Return')}</Badge>

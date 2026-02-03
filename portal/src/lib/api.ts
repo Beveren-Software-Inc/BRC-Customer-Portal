@@ -267,6 +267,8 @@ export interface SalesInvoice {
   return_against?: string;
   customer_tax_id?: string;
   po_no?: string;
+  payment_date?: string | null;
+  days_to_pay?: number | null;
   brc_logo_url?: string;
   vision2030_logo_url?: string;
 }
@@ -328,6 +330,7 @@ export interface DeliveryNote {
   qr_code?: string;
   brc_logo_url?: string;
   vision2030_logo_url?: string;
+  attachment_entry?: number | null;
 }
 
 export interface DeliveryNoteOld {
