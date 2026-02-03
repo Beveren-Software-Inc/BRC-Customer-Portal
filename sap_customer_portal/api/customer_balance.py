@@ -964,45 +964,6 @@ def get_customer_invoices():
         for code in codes:
             all_invoices.extend(sap_api_utils.get_customer_invoices_from_sap(code, limit=500))
 
-        # Enrich closed invoices with payment info (payment_date, days_to_pay) using JL Entries
-        # Only for fully paid, non-return invoices
-        try:
-            for inv in all_invoices:
-                status = (inv.get("status") or "").lower()
-                outstanding = inv.get("outstanding_amount") or 0
-                is_return = inv.get("is_return") or 0
-                if status == "closed" and outstanding <= 0 and not is_return:
-                    doc_num = inv.get("name")
-                    customer_code = inv.get("customer")
-                    posting_date = inv.get("posting_date")
-                    if not (doc_num and customer_code and posting_date):
-                        continue
-                    like_pattern = f"%{doc_num}%"
-                    rows = frappe.db.sql("""
-                        SELECT MAX(posting_date) AS payment_date
-                        FROM `tabSap JL Entry`
-                        WHERE customer = %s
-                          AND (reference LIKE %s OR line_memo LIKE %s)
-                    """, (customer_code, like_pattern, like_pattern), as_dict=True)
-                    raw_payment_date = rows[0].get("payment_date") if rows and rows[0].get("payment_date") else None
-                    if raw_payment_date:
-                        try:
-                            inv_date = getdate(posting_date)
-                            raw_date = getdate(raw_payment_date)
-                            # If payment happened before invoice (downpayment),
-                            # treat effective payment date as invoice date (days_to_pay = 0)
-                            effective_date = inv_date if raw_date < inv_date else raw_date
-                            inv["payment_date"] = effective_date
-                            inv["days_to_pay"] = (effective_date - inv_date).days
-                        except Exception:
-                            inv["payment_date"] = None
-                            inv["days_to_pay"] = None
-                    else:
-                        inv["payment_date"] = None
-                        inv["days_to_pay"] = None
-        except Exception as e:
-            frappe.logger().warning(f"[Invoices] Failed to enrich payment info from JL Entry: {str(e)}")
-
         all_invoices.sort(key=lambda i: i.get("posting_date") or "", reverse=True)
         return {"success": True, "data": all_invoices}
 
