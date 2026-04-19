@@ -387,7 +387,7 @@ export default function InvoicesList() {
                       <TableHead className="hidden md:table-cell">{t('Customer')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Issue Date')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Due Date')}</TableHead>
-                      <TableHead className="hidden lg:table-cell">{t('Payment Date')}</TableHead>
+                      {/* <TableHead className="hidden lg:table-cell">{t('Payment Date')}</TableHead> */}
                       <TableHead className="hidden lg:table-cell text-center">{t('Days to Pay')}</TableHead>
                       <TableHead className="hidden sm:table-cell">{t('Return')}</TableHead>
                       <TableHead>{t('Status')}</TableHead>
@@ -414,9 +414,9 @@ export default function InvoicesList() {
                             <TableCell>
                               <Skeleton className="h-5 w-24" />
                             </TableCell>
-                            <TableCell>
+                            {/* <TableCell>
                               <Skeleton className="h-5 w-16" />
-                            </TableCell>
+                            </TableCell> */}
                             <TableCell className="text-right">
                               <Skeleton className="h-5 w-20 ml-auto" />
                             </TableCell>
@@ -444,16 +444,28 @@ export default function InvoicesList() {
                             {formatDate(invoice.posting_date)}
                           </TableCell>
                           <TableCell>{formatDate(invoice.due_date)}</TableCell>
-                          <TableCell className="hidden lg:table-cell">
+                          {/* <TableCell className="hidden lg:table-cell">
                             {invoice.status?.toLowerCase() === 'closed' && invoice.payment_date
                               ? formatDate(invoice.payment_date)
                               : '—'}
-                          </TableCell>
-                          <TableCell className="hidden lg:table-cell text-center">
-                            {invoice.status?.toLowerCase() === 'closed' && typeof invoice.days_to_pay === 'number'
-                              ? invoice.days_to_pay
-                              : '—'}
-                          </TableCell>
+                          </TableCell> */}
+                  <TableCell className="hidden lg:table-cell text-center">
+  {(() => {
+    if (invoice.status?.toLowerCase() !== 'open') return '—';
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const due = new Date(invoice.due_date);
+    due.setHours(0, 0, 0, 0);
+    const diffDays = Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+    if (diffDays > 0) return diffDays; // e.g. "14" days left
+    if (diffDays === 0) return <span className="text-amber-600 font-medium">Due today</span>;
+    return (
+      <span className="text-red-600 font-medium">
+        {Math.abs(diffDays)}d overdue
+      </span>
+    );
+  })()}
+</TableCell>
                           <TableCell className="hidden sm:table-cell">
                             {invoice.is_return ? (
                               <Badge variant="destructive">{t('Return')}</Badge>
