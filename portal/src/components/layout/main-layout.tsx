@@ -14,6 +14,7 @@ import {
   FolderOpen,
   Settings,
   Home,
+  LineChart,
 } from "lucide-react";
 import { useLocation } from "react-router-dom";
 import { Link } from "react-router-dom";
@@ -28,6 +29,7 @@ import { usePortalSettings } from "@/hooks/usePortalSettings";
 import { useMobile } from "@/hooks/use-mobile";
 import { useTranslation } from "react-i18next";
 import { useCustomer } from "@/context/customer-context";
+import { usePortalAdmin } from "@/hooks/usePortalAdmin";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -40,6 +42,7 @@ export default function MainLayout({ children }: MainLayoutProps) {
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
   const isMobile = useMobile();
   const { hasCustomers, hideSalesOrders } = useCustomer();
+  const { isPortalAdmin } = usePortalAdmin();
 
   // Use our custom hook to get portal settings
   const { logoUrl, iconUrl } = usePortalSettings();
@@ -221,6 +224,30 @@ export default function MainLayout({ children }: MainLayoutProps) {
             {/* Settings menu item */}
             <div className="border-t border-border">
               <ul className="space-y-1 px-2 py-2">
+                {isPortalAdmin && (
+                  <li>
+                    <Link
+                      to="/portal-analytics"
+                      className={`flex rounded-md px-3 py-2 ${
+                        styles.iconWrapper
+                      } ${
+                        pathname === "/portal-analytics"
+                          ? "bg-accent text-accent-foreground"
+                          : "hover:bg-accent hover:text-accent-foreground"
+                      }`}
+                    >
+                      <div className={styles.tooltipContainer}>
+                        <LineChart className="h-5 w-5" />
+                        {!sidebarOpen && !isMobile && (
+                          <span className={styles.tooltip}>{t("Portal Analytics")}</span>
+                        )}
+                      </div>
+                      <span className={`ml-2 ${styles.sidebarTextContent}`}>
+                        {t("Portal Analytics")}
+                      </span>
+                    </Link>
+                  </li>
+                )}
                 <li>
                   <Link
                     to="/settings"

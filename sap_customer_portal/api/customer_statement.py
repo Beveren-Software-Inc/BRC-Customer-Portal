@@ -87,40 +87,9 @@ def get_customer_list():
     Returns only customers linked via Portal User or by email match.
     """
     try:
-        user = frappe.session.user
-        
-        # Get customers they have access to via Portal User
-        portal_users = frappe.get_all(
-            "Portal User",
-            filters={"user": user, "parenttype": "Customer"},
-            fields=["parent"]
-        )
-        customer_names = [pu.parent for pu in portal_users]
-        
-        # If no Portal User mapping, try to find by email
-        if not customer_names:
-            user_email = frappe.db.get_value("User", user, "email")
-            if user_email:
-                customer_names = frappe.get_all("Customer", filters={"email_id": user_email}, pluck="name")
-        
-        if customer_names:
-            customers = frappe.get_all(
-                "Customer",
-                filters={"name": ["in", customer_names]},
-                fields=["name", "customer_name"]
-            )
-        else:
-            customers = []
-        
-        # Format the response
-        result = []
-        for customer in customers:
-            result.append({
-                "customer": customer.name,
-                "customer_name": customer.customer_name or customer.name
-            })
-        
-        return result
+        from sap_customer_portal.portal_customer_access import get_portal_customer_list_for_user
+
+        return get_portal_customer_list_for_user()
         
     except Exception as e:
         frappe.log_error(f"Error in get_customer_list: {str(e)}")

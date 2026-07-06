@@ -102,5 +102,21 @@ frappe.ui.form.on("Customer Portal Settings", {
 			
 			d.show();
 		});
+		
+		frm.add_custom_button(__("Sync Salespersons from SAP"), () => {
+			frappe.call({
+				method: "sap_customer_portal.api.sync_sales_persons.sync_customer_sales_persons_from_sap",
+				freeze: true,
+				freeze_message: __("Syncing salesperson codes from SAP..."),
+				callback(r) {
+					const msg = r.message || {};
+					frappe.msgprint({
+						title: msg.success ? __("Sync Complete") : __("Sync Finished with Errors"),
+						indicator: msg.success ? "green" : "orange",
+						message: msg.message || __("Sync completed."),
+					});
+				},
+			});
+		});
 	},
 });

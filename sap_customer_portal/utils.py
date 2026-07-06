@@ -18,29 +18,36 @@ def get_website_route_rules():
     """
     Returns the list of website route rules for the customer portal.
     Called in hooks.py
-    """
-    return [
-        # Major Default rules
-        {'from_route': '/portal/<path:app_path>', 'to_route': 'portal'},
-        {'from_route': '/me', 'to_route': 'portal'},
-        {'from_route': '/me/<path:app_path>', 'to_route': 'portal'},
 
-        # Add rules for specific React app top-level routes
-        # These ensure that refreshing on these paths serves the React app
-        {'from_route': '/sales-orders', 'to_route': 'portal'},
-        {'from_route': '/sales-orders/<path:app_path>', 'to_route': 'portal'},
-        {'from_route': '/quotations', 'to_route': 'portal'},
-        {'from_route': '/quotations/<path:app_path>', 'to_route': 'portal'},
-        {'from_route': '/sales-invoices', 'to_route': 'portal'},
-        {'from_route': '/sales-invoices/<path:app_path>', 'to_route': 'portal'},
-        {'from_route': '/delivery-notes', 'to_route': 'portal'},
-        {'from_route': '/delivery-notes/<path:app_path>', 'to_route': 'portal'},
-        {'from_route': '/support-tickets', 'to_route': 'portal'},        {'from_route': '/support-tickets/<path:app_path>', 'to_route': 'portal'},
-        {'from_route': '/settings', 'to_route': 'portal'},
-        {'from_route': '/settings/<path:app_path>', 'to_route': 'portal'},
-        {'from_route': '/customer-statement', 'to_route': 'portal'},
-        {'from_route': '/customer-statement/<path:app_path>', 'to_route': 'portal'},
+    Each route must be listed so browser refresh serves portal.html (SPA fallback).
+    """
+    rules = [
+        # SPA root — prevents refresh from sending portal users to desk
+        {"from_route": "/", "to_route": "portal"},
+        {"from_route": "/portal", "to_route": "portal"},
+        {"from_route": "/portal/<path:app_path>", "to_route": "portal"},
+        {"from_route": "/me", "to_route": "portal"},
+        {"from_route": "/me/<path:app_path>", "to_route": "portal"},
     ]
+
+    portal_spa_routes = [
+        "sales-orders",
+        "quotations",
+        "sales-invoices",
+        "delivery-notes",
+        "payments",
+        "support-tickets",
+        "documents",
+        "settings",
+        "customer-statement",
+        "portal-analytics",
+    ]
+
+    for route in portal_spa_routes:
+        rules.append({"from_route": f"/{route}", "to_route": "portal"})
+        rules.append({"from_route": f"/{route}/<path:app_path>", "to_route": "portal"})
+
+    return rules
 
 
 @frappe.whitelist()
@@ -85,9 +92,9 @@ def get_monthly_sales_order_stats(customer=None, company=None, months=12):
 # ------------------ Helpers ------------------ #
 
 def _resolve_customer_list(user, customer):
-    """Resolve customer list based on email or portal mapping."""
-    frappe.logger().info(f"[DEBUG] _resolve_customer_list called with user: {user}, customer: {customer}")
-    
+    """Resolve customer list for portal charts — uses the active customer when set."""
+    from sap_customer_portal.portal_customer_access import get_active_customer_code_for_user
+
     if customer:
         email = frappe.db.get_value("Customer", customer, "email_id")
         if email:
@@ -97,19 +104,22 @@ def _resolve_customer_list(user, customer):
         frappe.logger().info(f"[DEBUG] Returning single customer: {[customer]}")
         return [customer]
 
-    # For customer users, get their Portal User mapping
+    active = get_active_customer_code_for_user(user)
+    if active:
+        frappe.logger().info(f"[DEBUG] Using active portal customer: {active}")
+        return [active]
+
     portal_users = frappe.get_all("Portal User", filters={"user": user}, pluck="parent")
     frappe.logger().info(f"[DEBUG] Portal User customers: {portal_users}")
-    
+
     if not portal_users:
         frappe.logger().warning(f"[WARNING] No Portal User mapping found for user: {user}")
-        # Try to find customer by email if no Portal User mapping
         user_email = frappe.db.get_value("User", user, "email")
         if user_email:
             customers_by_email = frappe.get_all("Customer", filters={"email_id": user_email}, pluck="name")
             frappe.logger().info(f"[DEBUG] Found customers by user email: {customers_by_email}")
             return customers_by_email
-    
+
     return portal_users
 
 
