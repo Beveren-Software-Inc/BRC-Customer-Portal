@@ -107,14 +107,27 @@ frappe.ui.form.on("Customer Portal Settings", {
 			frappe.call({
 				method: "sap_customer_portal.api.sync_sales_persons.sync_customer_sales_persons_from_sap",
 				freeze: true,
-				freeze_message: __("Syncing salesperson codes from SAP..."),
+				freeze_message: __("Starting salesperson sync in background..."),
 				callback(r) {
 					const msg = r.message || {};
-					frappe.msgprint({
-						title: msg.success ? __("Sync Complete") : __("Sync Finished with Errors"),
-						indicator: msg.success ? "green" : "orange",
-						message: msg.message || __("Sync completed."),
-					});
+					if (msg.success) {
+						frappe.show_alert({
+							message: msg.message || __("Salesperson sync started in background. Check Error Log for progress."),
+							indicator: "green",
+						}, 8);
+					} else {
+						frappe.msgprint({
+							title: __("Sync Not Started"),
+							indicator: "orange",
+							message: msg.message || __("Could not start salesperson sync."),
+						});
+					}
+				},
+				error() {
+					frappe.show_alert({
+						message: __("Error starting salesperson sync. Check Error Log."),
+						indicator: "red",
+					}, 5);
 				},
 			});
 		});
