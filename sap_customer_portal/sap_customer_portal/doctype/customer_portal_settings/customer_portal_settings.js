@@ -112,7 +112,11 @@ frappe.ui.form.on("Customer Portal Settings", {
 					const msg = r.message || {};
 					if (msg.success) {
 						frappe.show_alert({
-							message: msg.message || __("Salesperson sync started in background. Check Error Log for progress."),
+							message:
+								msg.message ||
+								__(
+									"Salesperson sync started in background. Check Error Log for per-customer SAP responses."
+								),
 							indicator: "green",
 						}, 8);
 					} else {
