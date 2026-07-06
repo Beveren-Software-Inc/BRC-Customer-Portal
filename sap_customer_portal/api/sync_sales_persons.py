@@ -180,18 +180,54 @@ def _build_sap_slp_name_map(session_holder):
     return names
 
 
+def _slp_code_lookup_values(slp_code):
+    """Return SlpCode variants for DB lookup (int/str mismatches)."""
+    values = set()
+    if slp_code is None:
+        return values
+    values.add(slp_code)
+    values.add(str(slp_code))
+    try:
+        values.add(int(slp_code))
+    except (TypeError, ValueError):
+        pass
+    return values
+
+
+def _find_existing_sales_person(slp_code, sales_person_name):
+    """Find Sales Person by SAP SlpCode or by display name (name = sales_person_name in ERPNext)."""
+    sales_person_name = (sales_person_name or "").strip()
+
+    if _sales_person_slp_code_field_exists():
+        for value in _slp_code_lookup_values(slp_code):
+            name = frappe.db.get_value(
+                "Sales Person", {SALES_PERSON_SLP_CODE_FIELD: value}, "name"
+            )
+            if name:
+                return name
+
+    slp_code_str = str(slp_code)
+    if frappe.db.exists("Sales Person", slp_code_str):
+        return slp_code_str
+
+    if sales_person_name:
+        if frappe.db.exists("Sales Person", sales_person_name):
+            return sales_person_name
+        name = frappe.db.get_value(
+            "Sales Person", {"sales_person_name": sales_person_name}, "name"
+        )
+        if name:
+            return name
+
+    return None
+
+
 def _ensure_sales_person(slp_code, sales_person_name):
     """Create or update a Sales Person record for the SAP SlpCode."""
     slp_code_str = str(slp_code)
     sales_person_name = (sales_person_name or slp_code_str).strip()
 
-    existing_name = None
-    if _sales_person_slp_code_field_exists():
-        existing_name = frappe.db.get_value(
-            "Sales Person", {SALES_PERSON_SLP_CODE_FIELD: slp_code}, "name"
-        )
-    if not existing_name and frappe.db.exists("Sales Person", slp_code_str):
-        existing_name = slp_code_str
+    existing_name = _find_existing_sales_person(slp_code, sales_person_name)
 
     if existing_name:
         doc = frappe.get_doc("Sales Person", existing_name)
@@ -199,9 +235,11 @@ def _ensure_sales_person(slp_code, sales_person_name):
         if doc.sales_person_name != sales_person_name:
             doc.sales_person_name = sales_person_name
             changed = True
-        if _sales_person_slp_code_field_exists() and doc.get(SALES_PERSON_SLP_CODE_FIELD) != slp_code:
-            setattr(doc, SALES_PERSON_SLP_CODE_FIELD, slp_code)
-            changed = True
+        if _sales_person_slp_code_field_exists():
+            current_slp = doc.get(SALES_PERSON_SLP_CODE_FIELD)
+            if current_slp in (None, "") or str(current_slp) != slp_code_str:
+                setattr(doc, SALES_PERSON_SLP_CODE_FIELD, slp_code)
+                changed = True
         if changed:
             doc.flags.ignore_permissions = True
             doc.save(ignore_permissions=True)
@@ -214,8 +252,27 @@ def _ensure_sales_person(slp_code, sales_person_name):
     if _sales_person_slp_code_field_exists():
         setattr(doc, SALES_PERSON_SLP_CODE_FIELD, slp_code)
     doc.flags.ignore_permissions = True
-    doc.insert(ignore_permissions=True)
-    return doc.name, "created"
+
+    try:
+        doc.insert(ignore_permissions=True)
+        return doc.name, "created"
+    except Exception as exc:
+        if not frappe.db.is_duplicate_entry(exc):
+            raise
+        frappe.db.rollback()
+        existing_name = _find_existing_sales_person(slp_code, sales_person_name)
+        if not existing_name:
+            raise
+        doc = frappe.get_doc("Sales Person", existing_name)
+        changed = False
+        if _sales_person_slp_code_field_exists() and not doc.get(SALES_PERSON_SLP_CODE_FIELD):
+            setattr(doc, SALES_PERSON_SLP_CODE_FIELD, slp_code)
+            changed = True
+        if changed:
+            doc.flags.ignore_permissions = True
+            doc.save(ignore_permissions=True)
+            return doc.name, "updated"
+        return doc.name, "unchanged"
 
 
 def _ensure_customer_sales_team(customer_name, sales_person_name):
