@@ -1081,6 +1081,10 @@ def get_customer_info_from_frappe(customer_code: str):
         if frappe.db.exists("Customer", customer_code):
             customer_doc = frappe.get_doc("Customer", customer_code)
             customer_info['customer_name'] = customer_doc.customer_name or customer_code
+            if customer_doc.meta.has_field("custom_arabic_name"):
+                customer_info["customer_arabic_name"] = (
+                    customer_doc.get("custom_arabic_name") or ""
+                )
             
             # Get primary address
             addresses = frappe.db.sql("""

@@ -165,6 +165,11 @@ export const DeliveryNotePrint = ({
             <tr>
               <td style={{ border: "1px solid #ddd", padding: "8px", verticalAlign: "top" }}>
                 <div style={{ marginBottom: "5px", fontWeight: "bold" }}>{deliveryNote.customer_name || deliveryNote.customer || "-"}</div>
+                {deliveryNote.customer_arabic_name && (
+                  <div dir="rtl" lang="ar" style={{ marginBottom: "5px", fontWeight: "bold", textAlign: "right" }}>
+                    {deliveryNote.customer_arabic_name}
+                  </div>
+                )}
                 <div style={{ fontSize: "10px", whiteSpace: "pre-wrap" }}>
                   {deliveryNote.address_display || "-"}
                 </div>

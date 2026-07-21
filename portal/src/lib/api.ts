@@ -100,6 +100,7 @@ export interface SalesOrder {
   name: string;
   customer: string;
   customer_name?: string;
+  customer_arabic_name?: string;
   transaction_date: string;
   grand_total: number;
   status: string;
@@ -246,6 +247,7 @@ export interface SalesInvoice {
   sap_doc_entry?: number;
   customer: string;
   customer_name?: string;
+  customer_arabic_name?: string;
   posting_date: string;
   due_date: string;
   grand_total: number;
@@ -295,6 +297,7 @@ export interface SalesItem {
   rate: number;
   amount: number;
   description?: string;
+  arabic_description?: string;
   uom?: string;
   stock_uom?: string;
   conversion_factor?: number;
@@ -307,6 +310,7 @@ export interface DeliveryNote {
   name: string;
   customer: string;
   customer_name?: string;
+  customer_arabic_name?: string;
   posting_date: string;
   grand_total: number;
   status: string;

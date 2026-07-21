@@ -135,5 +135,39 @@ frappe.ui.form.on("Customer Portal Settings", {
 				},
 			});
 		});
+
+		frm.add_custom_button(__("Sync Customer Arabic Names from SAP"), () => {
+			frappe.call({
+				method:
+					"sap_customer_portal.api.sync_customer_arabic_names.sync_customer_arabic_names_from_sap",
+				freeze: true,
+				freeze_message: __("Starting customer Arabic name sync in background..."),
+				callback(r) {
+					const msg = r.message || {};
+					if (msg.success) {
+						frappe.show_alert({
+							message:
+								msg.message ||
+								__("Customer Arabic name sync started in background."),
+							indicator: "green",
+						}, 8);
+					} else {
+						frappe.msgprint({
+							title: __("Sync Not Started"),
+							indicator: "orange",
+							message:
+								msg.message ||
+								__("Could not start customer Arabic name sync."),
+						});
+					}
+				},
+				error() {
+					frappe.show_alert({
+						message: __("Error starting customer Arabic name sync."),
+						indicator: "red",
+					}, 5);
+				},
+			});
+		});
 	},
 });
