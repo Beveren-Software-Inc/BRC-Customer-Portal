@@ -48,3 +48,15 @@ def daily_sync_jl_entries():
         frappe.log_error(f"Error in daily_sync_jl_entries: {str(e)}", "SAP JL Entry Daily Sync")
         frappe.logger().error(f"Error in daily SAP JL Entry sync: {str(e)}")
 
+
+def close_stale_portal_sessions():
+    """Hourly cleanup for portal sessions left open after browser close."""
+    try:
+        from sap_customer_portal.api.portal_analytics import close_stale_portal_sessions as _close
+
+        closed = _close()
+        if closed:
+            frappe.logger().info(f"Closed {closed} stale portal usage session(s)")
+    except Exception as e:
+        frappe.log_error(f"Error closing stale portal sessions: {str(e)}", "Portal Analytics")
+

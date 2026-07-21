@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { ChevronDown, Settings, PanelLeft, LogOut, LayoutGrid, Menu, Globe, RefreshCw } from "lucide-react";
+import { ChevronDown, Settings, PanelLeft, LogOut, LayoutGrid, Menu, Globe, RefreshCw, Building2 } from "lucide-react";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -15,7 +14,8 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToggleSidebar } from "./sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/context/auth-context";
-import { useApi } from "@/hooks/useApi";
+import { useCustomer } from "@/context/customer-context";
+import { endPortalUsageSession } from "@/hooks/usePortalAnalytics";
 import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { toast } from "@/components/ui/use-toast";
@@ -29,55 +29,9 @@ interface NavbarProps {
 export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
   const { toggle } = useToggleSidebar();
   const { user, logout } = useAuth();
-  const [customerName, setCustomerName] = useState("");
+  const { customerDisplayName, canSwitchCustomer, customers, activeCustomer, switchCustomer, showDeskNavigation } = useCustomer();
   const { t, i18n } = useTranslation();
   const queryClient = useQueryClient();
-  
-  // Define fields to fetch for orders and invoices (including customer_name)
-  const salesOrderFields = ["name", "customer", "customer_name"];
-  const salesInvoiceFields = ["name", "customer", "customer_name"];
-
-  // Use the centralized useApi hook to fetch data
-  const { 
-    data: orders = [], 
-    isLoading: ordersLoading
-  } = useApi("Sales Order", salesOrderFields);
-
-  const {
-    data: invoices = [],
-    isLoading: invoicesLoading
-  } = useApi("Sales Invoice", salesInvoiceFields);
-  
-  // Process customer name from orders and invoices
-  useEffect(() => {
-    // If either data is still loading, wait until both are loaded
-    if (ordersLoading || invoicesLoading) return;
-    
-    // Combine all customer names from both orders and invoices
-    const customerNames = new Set<string>();
-    
-    orders.forEach(order => {
-      if (order.customer) {
-        customerNames.add(order.customer);
-      }
-    });
-    
-    invoices.forEach(invoice => {
-      if (invoice.customer) {
-        customerNames.add(invoice.customer);
-      }
-    });
-    
-    // If there's only one unique customer, use that name
-    // If multiple, show the first customer's name (avoid "All Customers")
-    if (customerNames.size === 1) {
-      setCustomerName(Array.from(customerNames)[0]);
-    } else if (customerNames.size > 1) {
-      setCustomerName(Array.from(customerNames)[0]);
-    } else {
-      setCustomerName("Customer");
-    }
-  }, [orders, invoices, ordersLoading, invoicesLoading]);
 
   const handleToggle = () => {
     if (isMobile && onMenuClick) {
@@ -91,6 +45,7 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
 
   const handleLogout = async () => {
     try {
+      endPortalUsageSession();
       // Call the Frappe logout endpoint first
       const response = await fetch('/api/method/logout', {
         method: 'GET',
@@ -156,6 +111,19 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
   const userInitials = user?.initials || "U";
   const userFullName = user?.fullName || "User";
 
+  const activeCustomerLabel = (() => {
+    if (activeCustomer && customers.length > 0) {
+      const match = customers.find((item) => item.customer === activeCustomer);
+      if (match) {
+        return `${match.customer}: ${match.customer_name}`;
+      }
+    }
+    if (customerDisplayName && customerDisplayName !== "Customer") {
+      return customerDisplayName;
+    }
+    return activeCustomer;
+  })();
+
   return (
     <header className="sticky top-0 z-30 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
       <div className="flex h-16 items-center px-4">
@@ -175,9 +143,58 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
               )}
             </Button>
             
-            <div className="flex items-center">
-              <h1 className="text-lg font-semibold truncate max-w-[120px] sm:max-w-none sm:text-xl">{t(customerName || "Customer")}</h1>
-              <span className="text-xs sm:text-sm text-muted-foreground ml-2 mt-0.5 hidden sm:inline-block">{t("Customer Portal")}</span>
+            <div className="flex items-center gap-2 min-w-0 flex-wrap">
+              <h1 className="text-lg font-semibold shrink-0 sm:text-xl">
+                {t("Customer Portal")}
+              </h1>
+              {activeCustomerLabel && (
+                <span
+                  className="inline-flex items-center rounded-md border border-primary/30 bg-primary/5 px-2 py-0.5 text-xs sm:text-sm font-medium text-foreground max-w-[140px] sm:max-w-xs truncate"
+                  title={activeCustomerLabel}
+                >
+                  {activeCustomerLabel}
+                </span>
+              )}
+              {canSwitchCustomer && customers.length > 0 && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="outline" size="sm" className="h-8 gap-1 shrink-0">
+                      <Building2 className="h-4 w-4" />
+                      <span className="hidden sm:inline">{t("Switch Customer")}</span>
+                      <ChevronDown className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="start" className="max-h-72 overflow-y-auto">
+                    <DropdownMenuLabel>{t("Select Customer")}</DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {customers.map((item) => (
+                      <DropdownMenuItem
+                        key={item.customer}
+                        onClick={async () => {
+                          if (item.customer !== activeCustomer) {
+                            try {
+                              await switchCustomer(item.customer);
+                            } catch (error) {
+                              toast({
+                                variant: "destructive",
+                                title: t("Switch Failed"),
+                                description:
+                                  error instanceof Error
+                                    ? error.message
+                                    : t("Could not switch customer. Please try again."),
+                                duration: 5000,
+                              });
+                            }
+                          }
+                        }}
+                      >
+                        {item.customer === activeCustomer ? "✓ " : ""}
+                        {item.customer}: {item.customer_name}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
 
@@ -212,10 +229,12 @@ export default function Navbar({ isMobile = false, onMenuClick }: NavbarProps) {
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>{t("My Account")}</DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={handleAppsRedirect}>
-                  <LayoutGrid className="mr-2 h-4 w-4" />
-                  <span>{t("Apps")}</span>
-                </DropdownMenuItem>
+                {showDeskNavigation && (
+                  <DropdownMenuItem onClick={handleAppsRedirect}>
+                    <LayoutGrid className="mr-2 h-4 w-4" />
+                    <span>{t("Apps")}</span>
+                  </DropdownMenuItem>
+                )}
                 <DropdownMenuItem asChild>
                   <Link to="/settings">
                     <Settings className="mr-2 h-4 w-4" />

@@ -503,6 +503,141 @@ export async function getCustomerBalance(): Promise<any> {
   }
 }
 
+export interface PortalCustomerOption {
+  customer: string;
+  customer_name: string;
+  is_active?: boolean;
+}
+
+export async function getPortalCustomerAccess(): Promise<{
+  has_customers: boolean;
+  has_multiple_customers: boolean;
+  is_sales_user: boolean;
+  can_switch_customer: boolean;
+  show_desk_navigation: boolean;
+  active_customer: string | null;
+  customers: PortalCustomerOption[];
+}> {
+  const response = await fetch(
+    "/api/method/sap_customer_portal.api.portal_customer.get_portal_customer_access",
+    { credentials: "include" }
+  );
+  const data = await response.json();
+  const message = data.message || {};
+  return {
+    has_customers: message.has_customers === true,
+    has_multiple_customers: message.has_multiple_customers === true,
+    is_sales_user: message.is_sales_user === true,
+    can_switch_customer: message.can_switch_customer === true,
+    show_desk_navigation: message.show_desk_navigation === true,
+    active_customer: message.active_customer || null,
+    customers: message.customers || [],
+  };
+}
+
+export async function setActivePortalCustomer(customer: string): Promise<{
+  active_customer: string;
+  customer_name: string;
+}> {
+  const csrfToken = getCSRFToken();
+  const response = await fetch(
+    "/api/method/sap_customer_portal.api.portal_customer.set_active_portal_customer",
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(csrfToken ? { "X-Frappe-CSRF-Token": csrfToken } : {}),
+      },
+      credentials: "include",
+      body: JSON.stringify({ customer }),
+    }
+  );
+  const data = await response.json();
+  if (data.exc || !data.message?.success) {
+    throw new Error(
+      data._server_messages
+        ? JSON.parse(data._server_messages)[0]
+        : data.message?.message || "Failed to switch customer"
+    );
+  }
+  return {
+    active_customer: data.message.active_customer,
+    customer_name: data.message.customer_name,
+  };
+}
+
+export async function checkPortalAdmin(): Promise<boolean> {
+  const response = await fetch(
+    "/api/method/sap_customer_portal.api.portal_analytics.is_portal_admin",
+    { credentials: "include" }
+  );
+  const data = await response.json();
+  return data.message?.is_admin === true;
+}
+
+export interface PortalAnalyticsSummary {
+  total_logins: number;
+  unique_users: number;
+  avg_duration_minutes: number;
+  total_page_views: number;
+  total_portal_sessions?: number;
+}
+
+export interface PortalAnalyticsDashboard {
+  success: boolean;
+  from_date: string;
+  to_date: string;
+  summary: PortalAnalyticsSummary;
+  per_user: Array<{
+    user: string;
+    full_name?: string;
+    login_count: number;
+    page_views: number;
+    avg_duration_seconds?: number;
+    last_login?: string;
+  }>;
+  top_pages: Array<{
+    page_path: string;
+    page_title?: string;
+    visits: number;
+  }>;
+  daily_logins: Array<{
+    day: string;
+    logins: number;
+    unique_users: number;
+  }>;
+  recent_sessions: Array<{
+    name: string;
+    user: string;
+    full_name?: string;
+    customer?: string;
+    session_start?: string;
+    session_end?: string;
+    duration_seconds?: number;
+    page_view_count?: number;
+    status?: string;
+  }>;
+}
+
+export async function getPortalAnalyticsDashboard(
+  fromDate: string,
+  toDate: string
+): Promise<PortalAnalyticsDashboard> {
+  const params = new URLSearchParams({
+    from_date: fromDate,
+    to_date: toDate,
+  });
+  const response = await fetch(
+    `/api/method/sap_customer_portal.api.portal_analytics.get_portal_analytics_dashboard?${params.toString()}`,
+    { credentials: "include" }
+  );
+  const data = await response.json();
+  if (data.exc || !data.message?.success) {
+    throw new Error(data.message?.message || "Failed to load portal analytics");
+  }
+  return data.message;
+}
+
 export async function getCustomerDashboardData(): Promise<any> {
   const controller = new AbortController();
   const timeoutId = setTimeout(() => controller.abort(), 60000); // 60 second timeout for dashboard

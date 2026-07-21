@@ -3,6 +3,7 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { CurrencyProvider } from "@/context/currency-context";
 import { AuthProvider } from "@/context/auth-context";
 import { CustomerProvider } from "@/context/customer-context";
+import { usePortalAnalytics } from "@/hooks/usePortalAnalytics";
 import MainLayout from "@/components/layout/main-layout";
 import ProtectedRoute from "@/components/auth/protected-route";
 import NotFound from "@/app/not-found/page";
@@ -28,11 +29,18 @@ import DeliveryNoteDetail from "@/components/delivery-notes/delivery-note-detail
 import PaymentDetail from "@/components/payments/payment-detail";
 import SupportTicketDetail from "@/components/support-tickets/support-ticket-detail";
 import CustomerStatementList from "@/components/customer-statement/customer-statement-list";
+import PortalAnalyticsPage from "@/components/analytics/portal-analytics";
+
+function PortalAnalyticsTracker() {
+  usePortalAnalytics();
+  return null;
+}
 
 export default function App() {
   return (
     <ThemeProvider defaultTheme="light" storageKey="theme">
       <AuthProvider>
+        <PortalAnalyticsTracker />
         <CurrencyProvider>
           <CustomerProvider>
             <Routes>
@@ -156,6 +164,16 @@ export default function App() {
 
                       {/* Settings - always accessible */}
                       <Route path="/settings" element={<Settings />} />
+
+                      {/* Portal analytics - System Manager only */}
+                      <Route
+                        path="/portal-analytics"
+                        element={
+                          <ProtectedRoute requireAdmin={true}>
+                            <PortalAnalyticsPage />
+                          </ProtectedRoute>
+                        }
+                      />
 
                       {/* Customer Statement - requires customer */}
                       <Route

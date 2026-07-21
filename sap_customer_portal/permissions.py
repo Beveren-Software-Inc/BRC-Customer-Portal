@@ -9,6 +9,13 @@ def is_customer_user():
     roles = frappe.get_roles(frappe.session.user)
     return "Customer" in roles
 
+
+def is_sales_user():
+    """Return True if the current user has the Sales User portal role."""
+    from sap_customer_portal.portal_customer_access import is_sales_portal_user
+    return is_sales_portal_user()
+
+
 def has_customer_permissions():
     """Check if the current user has any User Permissions set for the Customer doctype."""
     if frappe.session.user == "Administrator":
@@ -24,7 +31,7 @@ def has_customer_permissions():
     return bool(perms)
 
 def get_allowed_customers(user):
-    """Get a list of specific Customer document names the user is allowed to access via User Permissions."""
+    """Get Customer document names the user may access via User Permissions or sales team."""
     perms = frappe.get_all("User Permission", 
         filters={
             "user": user, 
@@ -32,8 +39,12 @@ def get_allowed_customers(user):
         },
         fields=["for_value"]
     )
-    # Return a list of specific customer names (e.g., ['CUST-0001', 'CUST-0002'])
-    return [perm.for_value for perm in perms if perm.for_value]
+    customers = [perm.for_value for perm in perms if perm.for_value]
+
+    from sap_customer_portal.portal_customer_access import get_portal_customers_via_sales_person
+    customers.extend(get_portal_customers_via_sales_person(user))
+
+    return list(dict.fromkeys(customers))
 
 def customer_has_permission(doc, user=None, permission_type=None):
     """

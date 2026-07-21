@@ -1371,31 +1371,24 @@ def get_customer_invoice_detail_from_sap(customer_code, doc_num):
         return None
 
 def get_customer_code_from_user():
-    """Get customer code for the current user"""
-    current_user = frappe.session.user
-    
-    # For portal users, get their linked customer
-    try:
-        portal_users = frappe.get_all(
-            "Portal User",
-            filters={"user": current_user, "parenttype": "Customer"},
-            fields=["parent"]
-        )
-        
-        if portal_users:
-            customer_code = portal_users[0].parent
-            return customer_code
-        
-        # Try to find customer by email if no Portal User mapping
-        user_email = frappe.db.get_value("User", current_user, "email")
-        if user_email:
-            customers_by_email = frappe.get_all("Customer", filters={"email_id": user_email}, pluck="name")
-            if customers_by_email:
-                return customers_by_email[0]
-    except Exception as e:
-        frappe.logger().error(f"Error getting customer code for user {current_user}: {str(e)}")
-    
-    return None
+    """Get the active customer code for the current portal session."""
+    from sap_customer_portal.portal_customer_access import get_active_customer_code_for_user
+
+    return get_active_customer_code_for_user()
+
+
+def get_customer_codes_from_user():
+    """Return all customer codes linked to the current user (not the active selection)."""
+    from sap_customer_portal.portal_customer_access import get_linked_customer_codes_for_user
+
+    return get_linked_customer_codes_for_user()
+
+
+def get_active_customer_codes_from_user():
+    """Return only the active customer code as a list (prevents mixed portal data)."""
+    from sap_customer_portal.portal_customer_access import get_active_customer_codes_list
+
+    return get_active_customer_codes_list()
 
 
 def get_customer_gl_transactions_from_sap(customer_code, from_date, to_date, limit=100000000):
@@ -1537,33 +1530,3 @@ def get_customer_gl_transactions_from_sap(customer_code, from_date, to_date, lim
         return []
 
 
-def get_customer_codes_from_user():
-    """Return a list of customer codes for the current user.
-
-    Logic:
-    - Collect parents from `Portal User` where user == current_user and parenttype == Customer.
-    - If none found, fallback to Customer.email_id matching User.email to include all customers sharing same email.
-    - Returns empty list if no customers are linked (including admin/system managers without customer links).
-    """
-    current_user = frappe.session.user
-    try:
-        portal_customers = frappe.get_all(
-            "Portal User",
-            filters={"user": current_user, "parenttype": "Customer"},
-            pluck="parent"
-        )
-
-        if portal_customers:
-            return list(dict.fromkeys(portal_customers))
-
-        user_email = frappe.db.get_value("User", current_user, "email")
-        if user_email:
-            customers_by_email = frappe.get_all("Customer", filters={"email_id": user_email}, pluck="name")
-            if customers_by_email:
-                return list(dict.fromkeys(customers_by_email))
-    except Exception as e:
-        frappe.logger().error(f"Error getting customer codes for user {current_user}: {str(e)}")
-
-    # Fallback to single code helper to not break old behavior
-    single = get_customer_code_from_user()
-    return [single] if single else []

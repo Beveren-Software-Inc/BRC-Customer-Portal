@@ -57,7 +57,9 @@ fixtures = [
 # page_js = {"page" : "public/js/file.js"}
 
 # include js in doctype views
-# doctype_js = {"doctype" : "public/js/doctype.js"}
+doctype_js = {
+	"Customer": "public/js/customer_salesperson_sync.js",
+}
 # doctype_list_js = {"doctype" : "public/js/doctype_list.js"}
 # doctype_tree_js = {"doctype" : "public/js/doctype_tree.js"}
 # doctype_calendar_js = {"doctype" : "public/js/doctype_calendar.js"}
@@ -75,7 +77,8 @@ fixtures = [
 
 # website user home page (by Role)
 role_home_page = {
-	"Customer": "portal"
+	"Customer": "portal",
+	"Sales User": "portal",
 }
 
 # Generators
@@ -99,6 +102,7 @@ role_home_page = {
 # before_install = "sap_customer_portal.install.before_install"
 after_install = [
     "sap_customer_portal.customization.customer_role_perms.create_customer_role_permissions",
+    "sap_customer_portal.customization.sales_user_role_perms.create_sales_user_role_permissions",
 ]
 
 
@@ -108,6 +112,7 @@ after_install = [
 # before_uninstall = "sap_customer_portal.uninstall.before_uninstall"
 after_uninstall = [
     "sap_customer_portal.customization.customer_role_perms.delete_customer_role_permissions",
+    "sap_customer_portal.customization.sales_user_role_perms.delete_sales_user_role_permissions",
 ]
 
 
@@ -186,6 +191,17 @@ doc_events = {
             "sap_customer_portal.customization.customer_user_perms.delete_customer_user_permissions",
         ]
     },
+    "Sales Person": {
+        "after_insert": [
+            "sap_customer_portal.customization.sales_person_user_perms.sync_sales_person_portal_permissions",
+        ],
+        "on_update": [
+            "sap_customer_portal.customization.sales_person_user_perms.sync_sales_person_portal_permissions",
+        ],
+        "on_trash": [
+            "sap_customer_portal.customization.sales_person_user_perms.cleanup_sales_person_portal_permissions",
+        ],
+    },
 }
 
 # Scheduled Tasks
@@ -195,7 +211,10 @@ scheduler_events = {
     "cron": {
         "15 * * * *": [
             "sap_customer_portal.scheduler.daily_sync_jl_entries"
-        ]
+        ],
+        "0 * * * *": [
+            "sap_customer_portal.scheduler.close_stale_portal_sessions"
+        ],
     },
 }
 

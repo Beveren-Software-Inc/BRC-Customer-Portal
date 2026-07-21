@@ -63,7 +63,7 @@ export default function Dashboard() {
   const queryClient = useQueryClient();
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { hideSalesOrders } = useCustomer();
+  const { hideSalesOrders, isSalesUser, showDeskNavigation } = useCustomer();
 
   // State for dashboard data with proper types
   const [summaryData, setSummaryData] = useState<SummaryItem[]>([]);
@@ -600,16 +600,20 @@ export default function Dashboard() {
               {t('No Linked Customer')}
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 text-center max-w-md mb-6">
-              {t('You don\'t have any linked customer. Switch to desk to access ERPNext.')}
+              {isSalesUser
+                ? t("No customers are linked to your sales account. Ask an administrator to set custom_user on your Sales Person and add you to each Customer's sales team.")
+                : t("You don't have any linked customer. Please contact your administrator.")}
             </p>
-            <Button
-              onClick={() => {
-                window.location.href = '/app';
-              }}
-              className="bg-primary hover:bg-primary/90 text-primary-foreground"
-            >
-              {t('Switch to Desk')}
-            </Button>
+            {showDeskNavigation && (
+              <Button
+                onClick={() => {
+                  window.location.href = '/app';
+                }}
+                className="bg-primary hover:bg-primary/90 text-primary-foreground"
+              >
+                {t('Switch to Desk')}
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>
