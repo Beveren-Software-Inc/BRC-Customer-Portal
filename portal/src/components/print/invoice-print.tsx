@@ -157,18 +157,22 @@ export const InvoicePrint = ({
           <tbody>
             <tr style={{ borderBottom: "1px solid #ddd" }}>
               <td style={{ padding: "8px", width: "25%" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                <div style={{ marginBottom: "5px" }}>
                   <strong>Customer No.</strong>
-                  <span style={{ direction: "rtl", fontSize: "11px" }}>رقم العميل</span>
+                  <div dir="rtl" lang="ar" style={{ fontWeight: 700, marginTop: "2px" }}>
+                    رقم العميل
+                  </div>
                 </div>
                 <div style={{ margin: "5px 0" }}>{invoice.customer || "-"}</div>
               </td>
               <td style={{ padding: "8px", width: "25%" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "5px" }}>
+                <div style={{ marginBottom: "5px" }}>
                   <strong>Customer Name</strong>
-                  <span style={{ direction: "rtl", fontSize: "11px" }}>اسم العميل</span>
                 </div>
                 <div style={{ margin: "5px 0" }}>{invoice.customer_name || "-"}</div>
+                <div dir="rtl" lang="ar" style={{ fontWeight: 700, marginTop: "6px" }}>
+                  اسم العميل
+                </div>
                 {invoice.customer_arabic_name && (
                   <div dir="rtl" lang="ar" style={{ margin: "5px 0", textAlign: "right", fontWeight: 600 }}>
                     {invoice.customer_arabic_name}
