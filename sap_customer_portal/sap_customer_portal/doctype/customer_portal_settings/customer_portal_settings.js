@@ -3,6 +3,10 @@
 
 frappe.ui.form.on("Customer Portal Settings", {
 	refresh(frm) {
+		// All SAP sync actions are grouped inside a single "Actions" dropdown
+		// instead of one toolbar button per action.
+		const actions_group = __("Actions");
+
 		// Add custom button handler for sync
 		frm.add_custom_button(__("Sync SAP JL Entries"), () => {
 			// Show date input dialog
@@ -76,7 +80,7 @@ frappe.ui.form.on("Customer Portal Settings", {
 						callback: function(r) {
 							if (r.message && r.message.success) {
 								frappe.show_alert({
-									message: r.message.message || __("Sync started successfully! Check Error Log for progress."),
+									message: r.message.message || __("Sync started successfully in the background."),
 									indicator: "green"
 								}, 5);
 							} else {
@@ -101,7 +105,7 @@ frappe.ui.form.on("Customer Portal Settings", {
 			});
 			
 			d.show();
-		});
+		}, actions_group);
 		
 		frm.add_custom_button(__("Sync Salespersons from SAP"), () => {
 			frappe.call({
@@ -115,7 +119,7 @@ frappe.ui.form.on("Customer Portal Settings", {
 							message:
 								msg.message ||
 								__(
-									"Salesperson sync started in background. Check Error Log for per-customer SAP responses."
+									"Salesperson sync started in background. Only failures are written to the Error Log."
 								),
 							indicator: "green",
 						}, 8);
@@ -134,7 +138,7 @@ frappe.ui.form.on("Customer Portal Settings", {
 					}, 5);
 				},
 			});
-		});
+		}, actions_group);
 
 		frm.add_custom_button(__("Sync Customer Arabic Names from SAP"), () => {
 			frappe.call({
@@ -168,6 +172,6 @@ frappe.ui.form.on("Customer Portal Settings", {
 					}, 5);
 				},
 			});
-		});
+		}, actions_group);
 	},
 });

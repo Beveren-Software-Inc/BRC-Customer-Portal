@@ -131,16 +131,28 @@ def _format_result_html(result):
 
 
 def _write_customer_logs(results):
-    lines = [_format_log_line(result) for result in results]
-    for line in lines:
-        frappe.logger().info(f"[Arabic Name Sync] {line}")
+    """Append every customer line to the app log; send only failures to the Error Log.
 
-    for start in range(0, len(lines), LOG_BATCH_SIZE):
+    Updated / unchanged / empty-in-SAP rows are routine, so only rows with
+    status "failed" or "error" become Error Log entries.
+    """
+    for result in results:
+        frappe.logger().info(f"[Arabic Name Sync] {_format_log_line(result)}")
+
+    failure_lines = [
+        _format_log_line(result)
+        for result in results
+        if result.get("status") in ("failed", "error")
+    ]
+    if not failure_lines:
+        return
+
+    for start in range(0, len(failure_lines), LOG_BATCH_SIZE):
         batch_number = (start // LOG_BATCH_SIZE) + 1
-        title = "SAP Customer Arabic Name Sync — Customer Log"
-        if len(lines) > LOG_BATCH_SIZE:
+        title = "SAP Customer Arabic Name Sync — Failed Customers"
+        if len(failure_lines) > LOG_BATCH_SIZE:
             title += f" (part {batch_number})"
-        frappe.log_error("\n".join(lines[start : start + LOG_BATCH_SIZE]), title)
+        frappe.log_error("\n".join(failure_lines[start : start + LOG_BATCH_SIZE]), title)
 
 
 def _run_customer_arabic_name_sync():
@@ -221,12 +233,13 @@ def _run_customer_arabic_name_sync():
 def _sync_customer_arabic_names_background():
     try:
         result = _run_customer_arabic_name_sync()
-        title = (
-            "SAP Customer Arabic Name Sync Complete"
-            if result["success"]
-            else "SAP Customer Arabic Name Sync Finished with Errors"
-        )
-        frappe.log_error(result["message"], title)
+        if result["success"]:
+            # Success is routine — app log only.
+            frappe.logger().info(f"[Arabic Name Sync] {result['message']}")
+        else:
+            frappe.log_error(
+                result["message"], "SAP Customer Arabic Name Sync Finished with Errors"
+            )
         _write_customer_logs(result["results"])
         return result
     except Exception:
@@ -254,10 +267,15 @@ def sync_single_customer_arabic_name_from_sap(customer=None):
     try:
         result = _sync_one_customer(customer, session_holder)
         frappe.db.commit()
-        frappe.log_error(
-            _format_log_line(result) + "\n\n" + _format_result_html(result),
-            f"SAP Customer Arabic Name Sync — {customer}",
-        )
+        if result.get("status") in ("failed", "error"):
+            frappe.log_error(
+                _format_log_line(result) + "\n\n" + _format_result_html(result),
+                f"SAP Customer Arabic Name Sync — {customer}",
+            )
+        else:
+            frappe.logger().info(
+                f"[Arabic Name Sync] Single customer test: {_format_log_line(result)}"
+            )
         return {
             "success": result["status"] in ("success", "unchanged"),
             "work_done": result["status"] == "success",
@@ -299,6 +317,6 @@ def sync_customer_arabic_names_from_sap():
         "success": True,
         "message": _(
             "Customer Arabic name sync started in the background. "
-            "Check Error Log for the summary and per-customer SAP responses."
+            "Only failures are written to the Error Log."
         ),
     }
