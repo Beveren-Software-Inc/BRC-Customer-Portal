@@ -84,6 +84,11 @@ export const SalesOrderPrint = ({
             <div style={{ marginTop: "10px", fontSize: "10px", color: "#888" }}>Customer Address</div>
             <div style={{ fontSize: "11px", lineHeight: "1.4", color: "#222", marginTop: "5px" }}>
               <strong>{order.customer_name || order.customer}</strong><br />
+              {order.customer_arabic_name && (
+                <>
+                  <strong dir="rtl" lang="ar">{order.customer_arabic_name}</strong><br />
+                </>
+              )}
               {order.address_display ? (
                 order.address_display.split(', ').map((line, i, arr) => (
                   <React.Fragment key={i}>
@@ -180,6 +185,11 @@ export const SalesOrderPrint = ({
               <span style={{ fontSize: "10px", color: "#888", display: "block" }}>Delivery Address</span>
               <div style={{ fontSize: "11px", lineHeight: "1.4", color: "#222", marginTop: "5px" }}>
                 <strong>{order.customer_name || order.customer}</strong><br />
+                {order.customer_arabic_name && (
+                  <>
+                    <strong dir="rtl" lang="ar">{order.customer_arabic_name}</strong><br />
+                  </>
+                )}
                 {order.shipping_address_display ? (
                   order.shipping_address_display.split(', ').map((line, i, arr) => (
                     <React.Fragment key={i}>

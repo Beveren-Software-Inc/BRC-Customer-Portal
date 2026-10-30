@@ -1081,6 +1081,10 @@ def get_customer_info_from_frappe(customer_code: str):
         if frappe.db.exists("Customer", customer_code):
             customer_doc = frappe.get_doc("Customer", customer_code)
             customer_info['customer_name'] = customer_doc.customer_name or customer_code
+            if customer_doc.meta.has_field("custom_arabic_name"):
+                customer_info["customer_arabic_name"] = (
+                    customer_doc.get("custom_arabic_name") or ""
+                )
             
             # Get primary address
             addresses = frappe.db.sql("""
@@ -1284,7 +1288,7 @@ def sync_sap_jl_entries(from_date=None, to_date=None):
         date_msg = ""
         if from_date and to_date:
             date_msg = f" from {from_date} to {to_date}"
-        frappe.log_error(f"Starting SAP JL Entry sync{date_msg}...")
+        frappe.logger().info(f"Starting SAP JL Entry sync{date_msg}...")
         
         # Enqueue the background job
         frappe.enqueue(
@@ -1329,7 +1333,6 @@ def _get_customer_set():
     all_customers = frappe.get_all("Customer", pluck="name")
     customer_set = set(all_customers)
     frappe.logger().info(f"Found {len(customer_set)} customers in system")
-    frappe.log_error(f"Found {len(customer_set)} customers in system")
     return customer_set
 
 
@@ -1569,7 +1572,7 @@ def _sync_sap_jl_entries_background(from_date=None, to_date=None):
         to_date (str): End date for filtering (optional)
     """
     try:
-        frappe.log_error("Starting SAP JL Entry sync in background...")
+        frappe.logger().info("Starting SAP JL Entry sync in background...")
         
         # Parse date filters
         from_date_parsed, to_date_parsed = _parse_date_filters(from_date, to_date)
@@ -1634,8 +1637,9 @@ def _sync_sap_jl_entries_background(from_date=None, to_date=None):
             - Commits: {batch_count}
         """
         
+        # A completed sync is routine — keep it in the app log and leave the
+        # Error Log for actual failures.
         frappe.logger().info(summary)
-        frappe.log_error(summary)
         
         return {
             "success": True,

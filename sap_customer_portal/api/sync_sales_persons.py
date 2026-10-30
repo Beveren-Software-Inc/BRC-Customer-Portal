@@ -433,19 +433,30 @@ def _sync_one_customer(
 
 
 def _write_customer_logs_to_error_log(customer_logs, title_prefix="SAP Salesperson Sync"):
+    """Append every customer line to the app log; send only failures to the Error Log.
+
+    Successful / unchanged / skipped rows are routine and used to flood the
+    Error Log, so only rows with status "error" or "failed" are written there.
+    """
     if not customer_logs:
         return
 
-    lines = [_format_customer_log_line(log) for log in customer_logs]
-    for line in lines:
+    formatted = [(_format_customer_log_line(log), log.get("status")) for log in customer_logs]
+    for line, _status in formatted:
         frappe.logger().info(f"[SlpCode Sync] {line}")
 
+    failure_lines = [
+        line for line, status in formatted if status in ("error", "failed")
+    ]
+    if not failure_lines:
+        return
+
     batch_count = 0
-    for start in range(0, len(lines), CUSTOMER_LOG_BATCH_SIZE):
-        batch = lines[start : start + CUSTOMER_LOG_BATCH_SIZE]
+    for start in range(0, len(failure_lines), CUSTOMER_LOG_BATCH_SIZE):
+        batch = failure_lines[start : start + CUSTOMER_LOG_BATCH_SIZE]
         batch_count += 1
-        title = f"{title_prefix} — Customer Log"
-        if len(lines) > CUSTOMER_LOG_BATCH_SIZE:
+        title = f"{title_prefix} — Failed Customers"
+        if len(failure_lines) > CUSTOMER_LOG_BATCH_SIZE:
             title += f" (part {batch_count})"
         frappe.log_error("\n".join(batch), title)
 
@@ -628,13 +639,12 @@ def _sync_customer_sales_persons_background():
         if result.get("error_details"):
             log_message += "\n\nDetails:\n" + "\n".join(result["error_details"])
 
-        title = "SAP Salesperson Sync Complete"
         if result.get("errors"):
-            title = "SAP Salesperson Sync Finished with Errors"
-        elif not result.get("work_done"):
-            title = "SAP Salesperson Sync — No Changes"
+            frappe.log_error(log_message, "SAP Salesperson Sync Finished with Errors")
+        else:
+            # Success / no-change runs are routine — app log only.
+            frappe.logger().info(f"[SlpCode Sync] {log_message}")
 
-        frappe.log_error(log_message, title)
         _write_customer_logs_to_error_log(result.get("customer_logs") or [])
         frappe.logger().info("[SlpCode Sync] Background job finished")
         return result
@@ -672,11 +682,13 @@ def sync_single_customer_sales_person_from_sap(customer=None):
         frappe.db.commit()
 
         log_line = _format_customer_log_line(customer_log)
-        frappe.log_error(
-            log_line + "\n\n" + _format_customer_log_html(customer_log),
-            f"SAP Salesperson Sync — {customer}",
-        )
-        frappe.logger().info(f"[SlpCode Sync] Single customer test: {log_line}")
+        if customer_log.get("status") in ("error", "failed"):
+            frappe.log_error(
+                log_line + "\n\n" + _format_customer_log_html(customer_log),
+                f"SAP Salesperson Sync — {customer}",
+            )
+        else:
+            frappe.logger().info(f"[SlpCode Sync] Single customer test: {log_line}")
 
         work_done = (
             customer_log.get("sales_person_action") in ("created", "updated")
@@ -712,7 +724,7 @@ def sync_customer_sales_persons_from_sap():
             "success": False,
             "message": _(
                 "Salesperson sync is already running in the background. "
-                "Check Error Log for progress."
+                "Please wait for it to finish."
             ),
         }
 
@@ -737,6 +749,6 @@ def sync_customer_sales_persons_from_sap():
         "message": _(
             "Salesperson sync has been started in the background. "
             "This may take up to 2 hours for large customer lists. "
-            "Check Error Log for completion status and per-customer SAP responses."
+            "Only failures are written to the Error Log."
         ),
     }

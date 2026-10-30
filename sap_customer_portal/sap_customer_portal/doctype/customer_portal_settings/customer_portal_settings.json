@@ -15,7 +15,7 @@
   "column_break_yjvp",
   "download_format",
   "sync_section",
-  "sync_sap_jl_entry_button"
+  "auto_sync_new_customers"
  ],
  "fields": [
   {
@@ -70,17 +70,18 @@
    "label": "SAP Data Sync"
   },
   {
-   "fieldname": "sync_sap_jl_entry_button",
-   "fieldtype": "Button",
-   "label": "Sync SAP JL Entries",
-   "options": "sync_sap_jl_entries"
+   "default": "1",
+   "description": "Fetch the Arabic name and salesperson from SAP automatically whenever a new Customer is created.",
+   "fieldname": "auto_sync_new_customers",
+   "fieldtype": "Check",
+   "label": "Auto Sync New Customers from SAP"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "issingle": 1,
  "links": [],
- "modified": "2025-08-13 09:54:10.237517",
+ "modified": "2026-10-30 17:05:00.000000",
  "modified_by": "Administrator",
  "module": "SAP Customer Portal",
  "name": "Customer Portal Settings",

@@ -30,7 +30,8 @@ fixtures = [
         "doctype": "Custom Field",
         "filters": [
             ["name", "in", [
-                "Customer-custom_hide_sales_order_in_portal"
+                "Customer-custom_hide_sales_order_in_portal",
+                "Customer-custom_arabic_name",
             ]]
         ]
     }
@@ -182,6 +183,7 @@ doc_events = {
     "Customer": {
         "after_insert": [
             "sap_customer_portal.customization.customer_user_perms.create_customer_user_permissions",
+            "sap_customer_portal.customization.customer_sap_autosync.on_customer_created",
         ],
         "on_update": [
             "sap_customer_portal.customization.customer_user_perms.create_customer_user_permissions",

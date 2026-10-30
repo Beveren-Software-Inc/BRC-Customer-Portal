@@ -1304,6 +1304,38 @@ def get_customer_statement_from_sap(customer_code, from_date, to_date, limit=500
         frappe.logger().error(f"Error generating customer statement from SAP: {str(e)}")
         return None
 
+def _get_item_arabic_descriptions_from_sap(item_codes, session_cookies=None):
+    """Fetch OITM.FrgnName (Service Layer: Items.ForeignName) for invoice items."""
+    unique_codes = list(dict.fromkeys(code for code in item_codes if code))
+    if not unique_codes:
+        return {}
+
+    descriptions = {}
+    chunk_size = 20
+    for start in range(0, len(unique_codes), chunk_size):
+        chunk = unique_codes[start : start + chunk_size]
+        filters = [
+            f"ItemCode eq '{str(code).replace(chr(39), chr(39) * 2)}'"
+            for code in chunk
+        ]
+        params = {
+            "$select": "ItemCode,ItemName,ForeignName",
+            "$filter": " or ".join(filters),
+        }
+        rows = fetch_sap_data_with_session(
+            "Items", params, session_cookies=session_cookies
+        )
+        if not isinstance(rows, list):
+            continue
+        for row in rows:
+            item_code = row.get("ItemCode")
+            foreign_name = (row.get("ForeignName") or "").strip()
+            if item_code and foreign_name:
+                descriptions[item_code] = foreign_name
+
+    return descriptions
+
+
 def get_customer_invoice_detail_from_sap(customer_code, doc_num):
     """Fetch a single invoice with items from SAP B1 by DocNum using $expand (single call with fallback)."""
     try:
@@ -1336,6 +1368,9 @@ def get_customer_invoice_detail_from_sap(customer_code, doc_num):
         outstanding_amount = grand_total - paid_amount
         
         lines = invoice.get('DocumentLines') or []
+        item_arabic_descriptions = _get_item_arabic_descriptions_from_sap(
+            [line.get('ItemCode') for line in lines]
+        )
         items = []
         for ln in lines:
             qty = ln.get('Quantity') or 0
@@ -1345,6 +1380,9 @@ def get_customer_invoice_detail_from_sap(customer_code, doc_num):
                 'item_code': ln.get('ItemCode'),
                 'item_name': ln.get('ItemDescription'),
                 'description': ln.get('ItemDescription'),
+                'arabic_description': item_arabic_descriptions.get(
+                    ln.get('ItemCode'), ''
+                ),
                 'qty': qty,
                 'uom': ln.get('UoMCode') or ln.get('MeasureUnit') or '',
                 'rate': rate,

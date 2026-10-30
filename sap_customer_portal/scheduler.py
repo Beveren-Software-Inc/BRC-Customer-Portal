@@ -10,9 +10,11 @@ def daily_sync_jl_entries():
     
     Runs every night at 12:00 AM to fetch journal entries from the past 7 days
     This is an incremental sync that only fetches new data from the past week
+
+    Routine progress is written to the app log only — the Error Log is
+    reserved for failures.
     """
     try:
-        frappe.log_error("Starting daily SAP JL Entry sync...")
         frappe.logger().info("Starting daily SAP JL Entry sync...")
         
         # Calculate date range for the past week (7 days back)
@@ -24,7 +26,6 @@ def daily_sync_jl_entries():
         from_date_str = str(from_date) if from_date else None
         to_date_str = str(to_date) if to_date else None
         
-        frappe.log_error(f"Daily sync: Fetching JL entries from {from_date_str} to {to_date_str}")
         frappe.logger().info(f"Daily sync: Fetching JL entries from {from_date_str} to {to_date_str}")
         
         # Call the background sync function with date range
@@ -41,7 +42,6 @@ def daily_sync_jl_entries():
             to_date=to_date_str
         )
         
-        frappe.log_error(f"Daily sync job queued successfully for {from_date_str} to {to_date_str}")
         frappe.logger().info(f"Daily sync job queued successfully for {from_date_str} to {to_date_str}")
         
     except Exception as e:
